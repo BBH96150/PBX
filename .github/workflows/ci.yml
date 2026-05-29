@@ -139,12 +139,29 @@ jobs:
       group: deploy-hetzner
       cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install SSH key
         run: |
           install -m 700 -d ~/.ssh
           echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync db/migrations to box
+        # The migrate container reads /migrations from the host bind mount,
+        # so any new migration files must exist on disk BEFORE we run
+        # `migrate up`. Without this step the image got the new code but
+        # /root/sip-platform/db/migrations/ was stale — schema_migrations
+        # silently stayed at the old version. (Discovered 2026-05-29.)
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          rsync -avz --delete \
+            -e "ssh -o IdentitiesOnly=yes" \
+            db/migrations/ \
+            "$USER@$HOST:/root/sip-platform/db/migrations/"
 
       - name: Pull image, run migrations, restart control-plane
         env:
