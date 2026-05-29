@@ -177,6 +177,7 @@ func main() {
 		SIPPublicHost:      cfg.SIPPublicHost,
 		SIPPublicPort:      cfg.SIPPublicPort,
 		SIPPublicTransport: cfg.SIPPublicTransport,
+		SIPDomainSuffix:    cfg.SIPDomainSuffix,
 	})
 	if err != nil {
 		slog.Error("portal init", "err", err)

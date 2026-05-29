@@ -72,6 +72,16 @@ type Config struct {
 	// registration failures (e.g., "403 Incorrect Authentication") in
 	// the trunks page status fragment.
 	FSLogDir string
+
+	// Phase A.1 (Wildcard SIP domains): suffix appended to the tenant
+	// slug to auto-generate the primary sip_domain on tenant create.
+	// E.g., suffix "pbx.tendpos.com" + slug "bbh" → "bbh.pbx.tendpos.com".
+	// When empty (dev/test), tenant create still works but no sip_domain
+	// is auto-generated — the operator picks one manually on the tenant
+	// detail page. Requires a *.<suffix> wildcard A record pointing at
+	// the platform's public IP so Linphone / desk phones resolve it
+	// without per-tenant /etc/hosts hacks.
+	SIPDomainSuffix string
 }
 
 func FromEnv() (*Config, error) {
@@ -119,6 +129,7 @@ func FromEnv() (*Config, error) {
 	c.PortalBaseURL = envOr("PORTAL_BASE_URL", "http://localhost:8080")
 	c.FSDynamicGatewayDir = envOr("FS_DYNAMIC_GATEWAY_DIR", "/fs-gateways")
 	c.FSLogDir = envOr("FS_LOG_DIR", "/fs-logs")
+	c.SIPDomainSuffix = strings.TrimPrefix(os.Getenv("SIP_DOMAIN_SUFFIX"), ".")
 
 	c.SMTPHost = os.Getenv("SMTP_HOST")
 	c.SMTPUsername = os.Getenv("SMTP_USERNAME")

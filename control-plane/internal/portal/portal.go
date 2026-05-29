@@ -48,6 +48,9 @@ type Server struct {
 	sipPublicHost      string
 	sipPublicPort      int
 	sipPublicTransport string
+	// Phase A.1: suffix appended to tenant slug to auto-generate the
+	// primary sip_domain on tenant create. Empty disables auto-gen.
+	sipDomainSuffix string
 	// Secure controls cookie Secure flag — set true behind HTTPS.
 	Secure bool
 }
@@ -76,6 +79,10 @@ type Options struct {
 	SIPPublicHost      string
 	SIPPublicPort      int
 	SIPPublicTransport string
+
+	// Phase A.1: tenant slug + this suffix → primary sip_domain on create.
+	// e.g. "pbx.tendpos.com" → tenant "bbh" gets bbh.pbx.tendpos.com.
+	SIPDomainSuffix string
 }
 
 func New(s *store.Store, opts Options) (*Server, error) {
@@ -98,6 +105,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		sipPublicHost:      opts.SIPPublicHost,
 		sipPublicPort:      opts.SIPPublicPort,
 		sipPublicTransport: opts.SIPPublicTransport,
+		sipDomainSuffix:    strings.TrimPrefix(opts.SIPDomainSuffix, "."),
 	}
 	t := template.New("").Funcs(template.FuncMap{
 		"deref":       funcs["deref"],
@@ -632,9 +640,24 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 		s.errPage(w, r, err)
 		return
 	}
-	if _, err := s.store.CreateTenant(r.Context(), r.FormValue("slug"), r.FormValue("name")); err != nil {
+	slug := r.FormValue("slug")
+	name := r.FormValue("name")
+	t, err := s.store.CreateTenant(r.Context(), slug, name)
+	if err != nil {
 		s.flashErr(w, r, "/admin/", err)
 		return
+	}
+	// Phase A.1: auto-create the tenant's primary sip_domain so the
+	// operator never has to think about it. Skipped when
+	// SIPDomainSuffix is empty (dev / pre-DNS deployments).
+	if s.sipDomainSuffix != "" {
+		domain := t.Slug + "." + s.sipDomainSuffix
+		if _, derr := s.store.CreateSIPDomain(r.Context(), t.ID, domain, true); derr != nil {
+			// Don't fail the whole tenant create — the operator can
+			// still set the domain manually on the tenant detail page.
+			slog.Warn("auto-create sip_domain failed",
+				"tenant", t.ID, "domain", domain, "err", derr)
+		}
 	}
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 }

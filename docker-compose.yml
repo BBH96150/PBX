@@ -113,6 +113,9 @@ services:
       PROVISIONING_PUBLIC_HOST: ${PROVISIONING_PUBLIC_HOST:-provision.example.local}
       SIP_PUBLIC_HOST: ${SIP_PUBLIC_HOST:-sip.example.local}
       SIP_PUBLIC_PORT: ${SIP_PUBLIC_PORT:-5060}
+      # Phase A.1: tenant slug + this suffix = primary sip_domain on create.
+      # Requires a *.<suffix> wildcard A record at the platform's public IP.
+      SIP_DOMAIN_SUFFIX: ${SIP_DOMAIN_SUFFIX:-}
       # Used to render absolute URLs in outgoing emails (invite accept,
       # password reset, verify-email) and in SAML EntityID. Without this,
       # links point at localhost.
