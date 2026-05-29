@@ -177,13 +177,23 @@ type DirectoryUser struct {
 // LookupDirectoryUser resolves (domain, user) to extension + optional VM box
 // in one trip. Used by the FreeSWITCH directory XML handler.
 func (s *Store) LookupDirectoryUser(ctx context.Context, domain, user string) (*DirectoryUser, error) {
+	// vb.* columns flow through a LEFT JOIN — they're all NULL when the
+	// extension has no voicemail box. COALESCE every vb.* scalar so the
+	// scanner never sees a NULL going into a non-pointer Go field. vb.id
+	// stays NULLABLE (scanned into *uuid.UUID) so we can distinguish "no
+	// box" from "box exists".
 	const q = `
 		SELECT e.id, e.tenant_id, e.sip_domain_id, e.extension, e.sip_username,
 		       '', e.user_id, COALESCE(e.display_name,''),
 		       e.voicemail_enabled, e.status, e.created_at, e.updated_at,
-		       vb.id, vb.pin, COALESCE(vb.email::text,''), vb.timezone,
-		       vb.max_messages, vb.max_msg_duration_sec,
-		       COALESCE(vb.greeting_path,''), vb.enabled
+		       vb.id,
+		       COALESCE(vb.pin,''),
+		       COALESCE(vb.email::text,''),
+		       COALESCE(vb.timezone,''),
+		       COALESCE(vb.max_messages,0),
+		       COALESCE(vb.max_msg_duration_sec,0),
+		       COALESCE(vb.greeting_path,''),
+		       COALESCE(vb.enabled,false)
 		  FROM extensions e
 		  JOIN sip_domains sd ON sd.id = e.sip_domain_id
 		  LEFT JOIN voicemail_boxes vb
