@@ -25,7 +25,7 @@
     <param name="auth-calls" value="false"/>
     <param name="accept-blind-auth" value="true"/>
     <param name="accept-blind-reg" value="true"/>
-    <param name="apply-inbound-acl" value="any_v4"/>      <!-- tighten in prod -->
+    <param name="apply-inbound-acl" value="local-net"/>      <!-- tighten in prod -->
 
     <!-- Codecs -->
     <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
