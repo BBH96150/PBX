@@ -26,10 +26,10 @@ jobs:
       - name: go vet
         working-directory: control-plane
         run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           # v2.4.0+ is built with Go 1.25 toolchain — required since our
-          # go.mod targets 1.25. "latest" tracked a 1.24-built release.
+          # go.mod targets 1.25. golangci-lint v2 requires action v7.
           version: v2.4.0
           working-directory: control-plane
           args: --timeout=5m
