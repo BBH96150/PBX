@@ -1,0 +1,22 @@
+{{define "verify_email_sent_content"}}
+<div class="row">
+  <h1 style="margin:0">Check your email</h1>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <p>We sent a verification link to {{if .Email}}<code>{{.Email}}</code>{{else}}your email address{{end}}. Click it within 24 hours to verify your account.</p>
+  {{if not .PortalConfigured}}
+  <article class="contrast" style="margin-top:0.5rem;font-size:0.85rem">
+    ⚠ This deployment has no SMTP configured — the email was generated but not delivered.
+    Ask the platform operator to set <code>SMTP_HOST</code> + friends, or use the verification link directly from the audit log / database.
+  </article>
+  {{end}}
+  <p class="muted" style="margin-top:0.75rem;font-size:0.85rem">
+    Didn't get it? Check spam, then resend below. Resends are rate-limited to once per minute.
+  </p>
+  <form method="post" action="/admin/verify-email/resend" style="margin-top:0.5rem">
+    <button type="submit">Resend verification email</button>
+    <a href="/admin/" role="button" class="secondary" style="margin-left:0.5rem">Skip for now →</a>
+  </form>
+</section>
+{{end}}

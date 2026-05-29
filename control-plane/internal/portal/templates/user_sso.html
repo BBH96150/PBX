@@ -1,0 +1,37 @@
+{{define "user_sso_content"}}
+<div class="row">
+  <h1 style="margin:0">Linked sign-in methods</h1>
+  <span class="muted">{{.User.Email}}</span>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>SSO identities <span class="muted">({{len .Identities}})</span></h2>
+  {{if .Identities}}
+  <table>
+    <thead><tr><th>Issuer</th><th>Subject</th><th>Email</th><th>First seen</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+      {{range .Identities}}
+      <tr>
+        <td><code style="font-size:0.82rem">{{.Issuer}}</code></td>
+        <td class="muted"><code>{{.Subject}}</code></td>
+        <td>{{.Email}}</td>
+        <td class="muted">{{.FirstSeenAt.Format "2006-01-02"}}</td>
+        <td class="muted">{{.LastUsedAt.Format "2006-01-02 15:04"}}</td>
+        <td>
+          <form method="post" action="/admin/security/sso/{{.ID}}/unlink" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Unlink</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:0.5rem;font-size:0.85rem">
+    Unlinking is refused if it would leave you with no way to sign in (no password set AND no other linked identity).
+    Set a password via the <a href="/admin/forgot-password">password-reset flow</a> first if you want to unlink your only identity.
+  </p>
+  {{else}}
+  <p class="muted">No SSO identities linked yet. Sign in via your workspace SSO URL once to link.</p>
+  {{end}}
+</section>
+{{end}}

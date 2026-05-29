@@ -1,0 +1,44 @@
+# Env
+.env
+.env.*
+!.env.example
+
+# Go
+control-plane/bin/
+control-plane/tmp/
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# TLS / secrets
+*.pem
+*.key
+*.crt
+!**/testdata/**/*.pem
+!**/testdata/**/*.key
+
+# FreeSWITCH runtime data
+freeswitch/var/
+freeswitch/log/
+freeswitch/db/
+freeswitch/recordings/
+
+# Carrier credentials — keep out of git.
+freeswitch/conf/vars-local.xml
+!freeswitch/conf/vars-local.xml.example
+
+# Kamailio runtime
+kamailio/var/
+kamailio/log/

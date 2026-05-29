@@ -1,0 +1,1325 @@
+// Package portal is the server-rendered web admin UI for the SIP platform.
+//
+// Auth model: user logs in with an API token; we stash it in an HttpOnly
+// cookie and verify it on every request. Portal handlers then call the
+// store directly (we're in-process). Tenant scoping mirrors the API
+// middleware — a tenant-scoped token can only view its own tenant.
+package portal
+
+import (
+	"bytes"
+	"context"
+	"embed"
+	"errors"
+	"html/template"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"github.com/tendpos/sip-platform/control-plane/internal/audit"
+	"github.com/tendpos/sip-platform/control-plane/internal/crypto"
+	"github.com/tendpos/sip-platform/control-plane/internal/sso"
+	"github.com/tendpos/sip-platform/control-plane/internal/store"
+)
+
+//go:embed templates/*.html
+var tmplFS embed.FS
+
+const cookieName = "sip_admin_token"
+
+type Server struct {
+	store      *store.Store
+	tmpls      *template.Template
+	mailer     Mailer
+	audit      *audit.Logger
+	sealer     *crypto.Sealer
+	ssoMgr     *sso.Manager
+	samlKey    *sso.SAMLKeypair
+	gwSyncer   GatewaySyncer
+	originator CallOriginator
+	// portalBaseURL is the public origin for invite/reset links we email.
+	portalBaseURL string
+	// Phase 5.1: SIP server connection info displayed to users for softphone
+	// setup. Falls back to portal host:5060/udp when unset.
+	sipPublicHost      string
+	sipPublicPort      int
+	sipPublicTransport string
+	// Secure controls cookie Secure flag — set true behind HTTPS.
+	Secure bool
+}
+
+// Mailer is the SMTP sender the invite + reset + verify email flows need.
+// nil → skip silently (dev environments).
+type Mailer interface {
+	SendInvite(to, inviterName, tenantName, acceptURL string) error
+	SendPasswordReset(to, resetURL string) error
+	SendEmailVerification(to, verifyURL string) error
+}
+
+// Options for portal.New. All fields optional.
+type Options struct {
+	Mailer        Mailer
+	PortalBaseURL string
+	Audit         *audit.Logger
+	Sealer        *crypto.Sealer    // for TOTP secret seal/open; nil disables 2FA enrollment
+	SSO           *sso.Manager      // for OIDC provider discovery + token exchange
+	SAMLKey       *sso.SAMLKeypair  // shared SP keypair; nil disables SAML routes
+	GatewaySyncer GatewaySyncer     // Phase 5.1: rewrites FS gateway XML + sofia rescan
+	Originator    CallOriginator    // Phase 5.1: FS originate for test-call buttons
+
+	// Phase 5.1: SIP server connection info to display on extension credential
+	// pages so users can configure their softphone/desk phone.
+	SIPPublicHost      string
+	SIPPublicPort      int
+	SIPPublicTransport string
+}
+
+func New(s *store.Store, opts Options) (*Server, error) {
+	if opts.SIPPublicPort == 0 {
+		opts.SIPPublicPort = 5060
+	}
+	if opts.SIPPublicTransport == "" {
+		opts.SIPPublicTransport = "udp"
+	}
+	srv := &Server{
+		store:              s,
+		mailer:             opts.Mailer,
+		portalBaseURL:      opts.PortalBaseURL,
+		audit:              opts.Audit,
+		sealer:             opts.Sealer,
+		ssoMgr:             opts.SSO,
+		samlKey:            opts.SAMLKey,
+		gwSyncer:           opts.GatewaySyncer,
+		originator:         opts.Originator,
+		sipPublicHost:      opts.SIPPublicHost,
+		sipPublicPort:      opts.SIPPublicPort,
+		sipPublicTransport: opts.SIPPublicTransport,
+	}
+	t := template.New("").Funcs(template.FuncMap{
+		"deref":       funcs["deref"],
+		"dyntemplate": srv.dyntemplate,
+	})
+	if _, err := t.ParseFS(tmplFS, "templates/*.html"); err != nil {
+		return nil, err
+	}
+	srv.tmpls = t
+	return srv, nil
+}
+
+// dyntemplate renders a named template into a string, returning template.HTML
+// so the layout doesn't HTML-escape it. Used by layout.html for
+// {{dyntemplate .ContentName .}}.
+func (s *Server) dyntemplate(name string, data any) (template.HTML, error) {
+	var buf bytes.Buffer
+	if err := s.tmpls.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", err
+	}
+	return template.HTML(buf.String()), nil
+}
+
+func (s *Server) Router() http.Handler {
+	r := chi.NewRouter()
+
+	r.Get("/login", s.handleLogin)
+	r.Post("/login", s.handleLoginPost)
+	r.Get("/logout", s.handleLogout)
+	r.Get("/signup", s.handleSignupGet)
+	r.Post("/signup", s.handleSignupPost)
+
+	// Phase 4.5: public password reset + invite acceptance.
+	r.Get("/forgot-password", s.handleForgotPasswordGet)
+	r.Post("/forgot-password", s.handleForgotPasswordPost)
+	r.Get("/reset-password/{token}", s.handleResetPasswordGet)
+	r.Post("/reset-password/{token}", s.handleResetPasswordPost)
+	r.Get("/accept-invite/{token}", s.handleAcceptInviteGet)
+	r.Post("/accept-invite/{token}", s.handleAcceptInvitePost)
+
+	// Phase 4.7: 2FA challenge page — public-ish; gated by sip_2fa_pending cookie.
+	r.Get("/2fa-challenge", s.twoFAChallengeGet)
+	r.Post("/2fa-challenge", s.twoFAChallengePost)
+
+	// Phase 4.8: SSO public entry points + callback.
+	r.Post("/login/sso", s.handleSSOLoginByEmail)
+	r.Get("/sso/{tenantSlug}/login", s.handleSSOLoginByTenant)
+	r.Get("/sso/callback", s.handleSSOCallback)
+
+	// Phase 4.10: SAML public entry points.
+	r.Get("/sso/saml/metadata", s.samlMetadata)
+	r.Get("/sso/saml/{tenantSlug}/login", s.handleSAMLLoginByTenant)
+	r.Post("/sso/saml/callback", s.handleSAMLCallback)
+
+	// Phase 4.9: verify-email entry points. Consume + landing are public;
+	// resend needs a session (handled inside its own auth check).
+	r.Get("/verify-email/sent", s.verifyEmailSent)
+	r.Get("/verify-email/{token}", s.verifyEmailGet)
+
+	// Authenticated routes.
+	r.Group(func(r chi.Router) {
+		r.Use(s.authRequired)
+		r.Use(s.require2FAEnrollment) // Phase 4.7 grace-mode enforcer
+		r.Get("/", s.dashboard)
+		r.Post("/switch-tenant", s.switchTenant)
+		r.Post("/tenants", s.createTenant)
+		r.Get("/tenants/{tenantID}", s.tenantDetail)
+		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
+		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
+		r.Post("/tenants/{tenantID}/extensions", s.createExtension)
+		r.Post("/tenants/{tenantID}/devices", s.createDevice)
+		r.Post("/tenants/{tenantID}/ring-groups", s.createRingGroup)
+		r.Post("/tenants/{tenantID}/ivrs", s.createIVR)
+		r.Post("/tenants/{tenantID}/queues", s.createQueue)
+
+		r.Get("/extensions/{extensionID}", s.extensionDetail)
+		r.Post("/extensions/{extensionID}/features", s.extensionFeaturesUpdate)
+		r.Post("/extensions/{extensionID}/rotate-password", s.extensionRotatePassword)
+		r.Post("/extensions/{extensionID}/voicemail", s.extensionVoicemailCreate)
+
+		r.Get("/api-tokens", s.apiTokensList)
+		r.Post("/api-tokens", s.apiTokensCreate)
+		r.Post("/api-tokens/{tokenID}/revoke", s.apiTokensRevoke)
+
+		// Phase 4.5: tenant-scoped invites admin page.
+		r.Get("/tenants/{tenantID}/invites", s.invitesList)
+		r.Post("/tenants/{tenantID}/invites", s.invitesCreate)
+		r.Post("/invites/{inviteID}/revoke", s.invitesRevoke)
+
+		// Phase 4.6: per-tenant audit log + verification gate toggle.
+		r.Get("/tenants/{tenantID}/audit", s.auditList)
+		r.Post("/tenants/{tenantID}/security", s.tenantSecurityUpdate)
+
+		// Phase 4.7: 2FA enrollment + management + admin reset.
+		r.Get("/security/2fa", s.twoFAStatus)
+		r.Post("/security/2fa/setup", s.twoFASetupPost)
+		r.Post("/security/2fa/confirm", s.twoFAConfirmPost)
+		r.Post("/security/2fa/disable", s.twoFADisablePost)
+		r.Post("/security/devices/{deviceID}/revoke", s.trustedDeviceRevoke)
+		r.Post("/users/{userID}/2fa/reset", s.admin2FAReset)
+
+		// Phase 4.8: per-tenant SSO admin + per-user identity management.
+		r.Get("/tenants/{tenantID}/sso", s.tenantSSOGet)
+		r.Post("/tenants/{tenantID}/sso", s.tenantSSOSave)
+		r.Post("/tenants/{tenantID}/sso/disable", s.tenantSSODisable)
+		r.Post("/tenants/{tenantID}/sso/test", s.tenantSSOTest)
+		r.Post("/tenants/{tenantID}/sso/domains", s.tenantSSODomainAdd)
+		r.Post("/tenants/{tenantID}/sso/domains/{domainID}/remove", s.tenantSSODomainRemove)
+
+		r.Get("/security/sso", s.userSSOIdentities)
+		r.Post("/security/sso/{identityID}/unlink", s.userSSOUnlink)
+
+		// Phase 4.10: tenant SAML admin.
+		r.Get("/tenants/{tenantID}/saml", s.tenantSAMLGet)
+		r.Post("/tenants/{tenantID}/saml", s.tenantSAMLSave)
+		r.Post("/tenants/{tenantID}/saml/disable", s.tenantSAMLDisable)
+
+		// Phase 4.11: per-user active session list.
+		r.Get("/security/sessions", s.sessionsList)
+		r.Post("/security/sessions/{tokenID}/revoke", s.sessionRevoke)
+		r.Post("/security/sessions/revoke-all", s.sessionRevokeAll)
+
+		// Phase 5.0: WebRTC softphone.
+		r.Get("/softphone", s.softphoneGet)
+		r.Post("/softphone/credentials", s.softphoneCredentialsPost)
+
+		// Phase 5.1: per-tenant carrier trunks (CallCentric, Telnyx, ...).
+		r.Get("/tenants/{tenantID}/trunks", s.trunksList)
+		r.Post("/tenants/{tenantID}/trunks", s.trunkCreate)
+		r.Post("/tenants/{tenantID}/trunks/{accountID}", s.trunkUpdate)
+		r.Post("/tenants/{tenantID}/trunks/{accountID}/delete", s.trunkDelete)
+		r.Get("/tenants/{tenantID}/trunks/{accountID}/status", s.trunkStatusFragment)
+		r.Post("/tenants/{tenantID}/trunks/{accountID}/test-outbound", s.trunkTestOutbound)
+
+		// Phase 5.1: per-tenant DIDs (inbound number → extension routing).
+		r.Get("/tenants/{tenantID}/dids", s.didsList)
+		r.Post("/tenants/{tenantID}/dids", s.didCreate)
+		r.Post("/tenants/{tenantID}/dids/{didID}/delete", s.didDelete)
+		r.Post("/tenants/{tenantID}/dids/{didID}/toggle", s.didToggleEnabled)
+		r.Post("/tenants/{tenantID}/dids/{didID}/test-inbound", s.didTestInbound)
+
+		// Phase 4.9: authenticated resend.
+		r.Post("/verify-email/resend", s.verifyEmailResend)
+	})
+	return r
+}
+
+// ---------------------------------------------------------------------------
+// Auth (cookie-based — wraps API token verification)
+// ---------------------------------------------------------------------------
+
+type ctxKey int
+
+const ctxKeyToken ctxKey = iota
+
+func (s *Server) authRequired(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(cookieName)
+		if err != nil || c.Value == "" {
+			http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+			return
+		}
+		tok, err := s.store.VerifyAPIToken(r.Context(), c.Value)
+		if err != nil {
+			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/admin", MaxAge: -1})
+			http.Redirect(w, r, "/admin/login?flash=session+expired", http.StatusSeeOther)
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxKeyToken, tok)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func tokenFromCtx(ctx context.Context) *store.APIToken {
+	if v, ok := ctx.Value(ctxKeyToken).(*store.APIToken); ok {
+		return v
+	}
+	return nil
+}
+
+// require2FAEnrollment is the per-tenant `require_2fa` grace-mode enforcer.
+// If any of the signed-in user's tenants requires 2FA and they haven't
+// enrolled yet, redirect them to /admin/security/2fa. Carve-outs:
+//   - the 2FA pages themselves (so they can actually enroll)
+//   - the logout endpoint
+//   - any /security/* page (devices, recovery codes, etc.)
+//   - super-admins (no enforcement against them)
+func (s *Server) require2FAEnrollment(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/security/") ||
+			p == "/security" || p == "/logout" || p == "/switch-tenant" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		tok := tokenFromCtx(r.Context())
+		if tok == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		user, _ := s.userFromSessionToken(r.Context(), tok)
+		if user == nil || user.Role == "super_admin" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		n, _ := s.store.CountConfirmedTwoFAMethods(r.Context(), user.ID)
+		if n > 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		memberships, _ := s.store.ListMembershipsForUser(r.Context(), user.ID)
+		for _, m := range memberships {
+			if req, _ := s.store.TenantRequires2FA(r.Context(), m.TenantID); req {
+				http.Redirect(w, r, "/admin/security/2fa?flash=Your+workspace+requires+2FA.+Enroll+below+to+continue.", http.StatusSeeOther)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	flash := r.URL.Query().Get("flash")
+	s.render(w, "login", map[string]any{"Flash": flash})
+}
+
+func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.render(w, "login", map[string]any{"Flash": "bad form"})
+		return
+	}
+
+	email := strings.TrimSpace(r.FormValue("email"))
+	password := r.FormValue("password")
+	token := strings.TrimSpace(r.FormValue("token"))
+
+	ip, ua := audit.FromRequest(r)
+
+	switch {
+	case email != "" && password != "":
+		// Phase 4.11: rate-limit per email + per IP before doing any
+		// password work. Bcrypt is expensive — refusing rapidly here saves
+		// CPU as well as deterring brute-force.
+		if limited, msg := s.store.LoginRateLimited(r.Context(), email, ip); limited {
+			s.audit.Log(r.Context(), audit.Event{
+				ActorEmail: email, Event: "auth.login.rate_limited",
+				IPAddress: ip, UserAgent: ua,
+			})
+			s.render(w, "login", map[string]any{"Flash": msg})
+			return
+		}
+
+		u, err := s.store.VerifyUserPassword(r.Context(), email, password)
+		if err != nil {
+			s.store.RecordLoginFailure(r.Context(), email, ip)
+			s.audit.Log(r.Context(), audit.Event{
+				ActorEmail: email, Event: audit.EventLoginFailure,
+				IPAddress: ip, UserAgent: ua,
+				Payload: map[string]any{"reason": "invalid_credentials"},
+			})
+			s.render(w, "login", map[string]any{"Flash": "Invalid email or password."})
+			return
+		}
+		// Successful password verify — clear the per-email failure counter.
+		s.store.ResetLoginCounters(r.Context(), email)
+		// Phase 4.4: multi-tenant memberships. Mint a session that's
+		// either NULL-tenant (super-admin) or pinned to the first
+		// membership; the dashboard offers a picker if >1.
+		memberships, _ := s.store.ListMembershipsForUser(r.Context(), u.ID)
+
+		// Phase 4.6: per-tenant email verification gate. If *any* of the
+		// user's tenants requires verified email, block login until they
+		// verify. Super-admins are exempt.
+		if u.Role != "super_admin" && u.EmailVerifiedAt == nil {
+			for _, m := range memberships {
+				if req, _ := s.store.TenantRequiresEmailVerified(r.Context(), m.TenantID); req {
+					s.audit.Log(r.Context(), audit.Event{
+						TenantID: &m.TenantID, ActorUserID: &u.ID, ActorEmail: u.Email,
+						Event: audit.EventLoginBlockedUnverified,
+						IPAddress: ip, UserAgent: ua,
+					})
+					s.render(w, "login", map[string]any{
+						"Flash": "Please verify your email before signing in. Check your inbox for the verification link, or ask an admin to resend it.",
+					})
+					return
+				}
+			}
+		}
+
+		// Phase 4.8: SSO enforcement. If any of the user's tenants requires
+		// SSO, password login is rejected — they must come in through the
+		// IdP. Super-admins exempt so a misconfigured SSO can't lock the
+		// platform out.
+		if u.Role != "super_admin" {
+			for _, m := range memberships {
+				if req, _ := s.store.TenantRequiresSSO(r.Context(), m.TenantID); req {
+					s.audit.Log(r.Context(), audit.Event{
+						TenantID: &m.TenantID, ActorUserID: &u.ID, ActorEmail: u.Email,
+						Event:     "auth.login.blocked_sso",
+						IPAddress: ip, UserAgent: ua,
+					})
+					s.render(w, "login", map[string]any{
+						"Flash": "Your workspace requires single sign-on. Enter your work email below to use SSO.",
+					})
+					return
+				}
+			}
+		}
+		var tenantID *uuid.UUID
+		scope := store.ScopeForRole(u.Role)
+		switch {
+		case len(memberships) == 0:
+			if u.Role != "super_admin" {
+				s.render(w, "login", map[string]any{"Flash": "Account has no workspaces. Contact an admin."})
+				return
+			}
+			// super-admin: tenant_id stays nil, admin scope
+		case len(memberships) == 1:
+			// Auto-pin to the single workspace.
+			m := memberships[0]
+			tenantID = &m.TenantID
+			scope = store.ScopeForRole(m.Role)
+		default:
+			// 2+ memberships: leave token unpinned so the dashboard
+			// renders the picker. Take the broadest scope across all
+			// memberships so the user can switch without re-login.
+			scope = "read"
+			for _, m := range memberships {
+				ms := store.ScopeForRole(m.Role)
+				if ms == "admin" {
+					scope = "admin"
+					break
+				} else if ms == "write" {
+					scope = "write"
+				}
+			}
+		}
+		// Phase 4.7: 2FA challenge interstitial. If the user has confirmed
+		// methods, gateLoginWith2FA either mounts a session via trusted-
+		// device skip or redirects to /admin/2fa-challenge. Either way we
+		// return early; the post-challenge path mints the session + audit.
+		if s.gateLoginWith2FA(w, r, u, tenantID, scope) {
+			return
+		}
+
+		issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
+			TenantID: tenantID,
+			Name:     "portal:" + u.Email + ":" + time.Now().UTC().Format("20060102T150405"),
+			Scope:    scope,
+		})
+		if err != nil {
+			s.render(w, "login", map[string]any{"Flash": "Internal error creating session."})
+			return
+		}
+		s.setSessionCookie(w, issued.Plaintext)
+		s.audit.Log(r.Context(), audit.Event{
+			TenantID: tenantID, ActorUserID: &u.ID, ActorEmail: u.Email,
+			ActorTokenID: &issued.ID,
+			Event:        audit.EventLoginSuccess,
+			IPAddress:    ip, UserAgent: ua,
+			Payload: map[string]any{"memberships": len(memberships), "scope": scope},
+		})
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+		return
+
+	case token != "":
+		tok, err := s.store.VerifyAPIToken(r.Context(), token)
+		if err != nil {
+			s.audit.Log(r.Context(), audit.Event{
+				Event: audit.EventLoginFailure,
+				IPAddress: ip, UserAgent: ua,
+				Payload: map[string]any{"reason": "invalid_token"},
+			})
+			s.render(w, "login", map[string]any{"Flash": "Invalid token."})
+			return
+		}
+		s.setSessionCookie(w, token)
+		s.audit.Log(r.Context(), audit.Event{
+			TenantID: tok.TenantID, ActorTokenID: &tok.ID,
+			Event:     audit.EventLoginSuccess,
+			IPAddress: ip, UserAgent: ua,
+			Payload: map[string]any{"method": "token"},
+		})
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+		return
+
+	default:
+		s.render(w, "login", map[string]any{"Flash": "Enter an email + password, or an API token."})
+	}
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    value,
+		Path:     "/admin",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.Secure,
+		MaxAge:   86400 * 7,
+	})
+}
+
+// Phase 4.4 signup + tenant switcher --------------------------------------
+
+func (s *Server) handleSignupGet(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "signup", map[string]any{"Form": signupFormView{Plan: "trial"}})
+}
+
+func (s *Server) handleSignupPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.render(w, "signup", map[string]any{"Flash": "bad form", "Form": signupFormView{Plan: "trial"}})
+		return
+	}
+	in := store.SignupInput{
+		CompanyName:      strings.TrimSpace(r.FormValue("company_name")),
+		Slug:             strings.TrimSpace(r.FormValue("slug")),
+		Plan:             strings.TrimSpace(r.FormValue("plan")),
+		BillingEmail:     strings.TrimSpace(r.FormValue("billing_email")),
+		BillingPhone:     strings.TrimSpace(r.FormValue("billing_phone")),
+		AdminEmail:       strings.TrimSpace(r.FormValue("admin_email")),
+		AdminPassword:    r.FormValue("admin_password"),
+		AdminDisplayName: strings.TrimSpace(r.FormValue("admin_display_name")),
+	}
+	tenant, user, err := s.store.CreateTenantWithAdmin(r.Context(), in)
+	if err != nil {
+		s.render(w, "signup", map[string]any{
+			"Flash": "Signup failed: " + err.Error(),
+			"Form": signupFormView{
+				CompanyName: in.CompanyName, Slug: in.Slug, Plan: in.Plan,
+				BillingEmail: in.BillingEmail, BillingPhone: in.BillingPhone,
+				AdminEmail: in.AdminEmail, AdminDisplayName: in.AdminDisplayName,
+			},
+		})
+		return
+	}
+	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
+		TenantID: &tenant.ID,
+		Name:     "portal:" + user.Email + ":" + time.Now().UTC().Format("20060102T150405"),
+		Scope:    "admin",
+	})
+	if err != nil {
+		http.Redirect(w, r, "/admin/login?flash=Account+created.+Please+sign+in.", http.StatusSeeOther)
+		return
+	}
+	s.setSessionCookie(w, issued.Plaintext)
+	ip, ua := audit.FromRequest(r)
+	s.audit.Log(r.Context(), audit.Event{
+		TenantID: &tenant.ID, ActorUserID: &user.ID, ActorEmail: user.Email,
+		ActorTokenID: &issued.ID,
+		Event:        audit.EventSignup,
+		TargetType:   "tenant", TargetID: &tenant.ID,
+		IPAddress: ip, UserAgent: ua,
+		Payload: map[string]any{
+			"plan": tenant.Plan, "slug": tenant.Slug, "company": in.CompanyName,
+		},
+	})
+
+	// Phase 4.9: fire verification email (no cooldown on signup — first send).
+	if err := s.dispatchVerificationEmail(r.Context(), user, 0); err != nil {
+		slog.Warn("signup verification dispatch failed", "user", user.Email, "err", err)
+	} else {
+		s.audit.Log(r.Context(), audit.Event{
+			ActorUserID: &user.ID, ActorEmail: user.Email,
+			Event: "auth.email.verification.sent", IPAddress: ip, UserAgent: ua,
+		})
+	}
+	http.Redirect(w, r,
+		"/admin/verify-email/sent?email="+user.Email,
+		http.StatusSeeOther)
+}
+
+type signupFormView struct {
+	CompanyName      string
+	Slug             string
+	Plan             string
+	BillingEmail     string
+	BillingPhone     string
+	AdminEmail       string
+	AdminDisplayName string
+}
+
+func (s *Server) switchTenant(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", 400)
+		return
+	}
+	tid, err := uuid.Parse(r.FormValue("tenant_id"))
+	if err != nil {
+		http.Error(w, "bad tenant_id", 400)
+		return
+	}
+	tok := tokenFromCtx(r.Context())
+	if tok == nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+	user, _ := s.userFromSessionToken(r.Context(), tok)
+	if user == nil {
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+		return
+	}
+	m, err := s.store.GetMembership(r.Context(), user.ID, tid)
+	if err != nil {
+		http.Error(w, "you don't belong to that tenant", http.StatusForbidden)
+		return
+	}
+	if strings.HasPrefix(tok.Name, "portal:") {
+		_ = s.store.RevokeAPIToken(r.Context(), tok.ID)
+	}
+	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
+		TenantID: &m.TenantID,
+		Name:     "portal:" + user.Email + ":" + time.Now().UTC().Format("20060102T150405"),
+		Scope:    store.ScopeForRole(m.Role),
+	})
+	if err != nil {
+		http.Error(w, "failed to switch", 500)
+		return
+	}
+	s.setSessionCookie(w, issued.Plaintext)
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+func (s *Server) userFromSessionToken(ctx context.Context, tok *store.APIToken) (*store.User, error) {
+	if !strings.HasPrefix(tok.Name, "portal:") {
+		return nil, nil
+	}
+	rest := tok.Name[len("portal:"):]
+	colon := strings.Index(rest, ":")
+	if colon == -1 {
+		return nil, nil
+	}
+	return s.store.GetUserByEmail(ctx, rest[:colon])
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	ip, ua := audit.FromRequest(r)
+	// Revoke the session token (if the cookie carries one we issued via
+	// email-password login). Tokens pasted in directly stay valid — those
+	// belong to the user, not the session.
+	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
+		if tok, err := s.store.VerifyAPIToken(r.Context(), c.Value); err == nil {
+			if strings.HasPrefix(tok.Name, "portal:") {
+				_ = s.store.RevokeAPIToken(r.Context(), tok.ID)
+			}
+			s.audit.Log(r.Context(), audit.Event{
+				TenantID: tok.TenantID, ActorTokenID: &tok.ID,
+				Event: audit.EventLogout, IPAddress: ip, UserAgent: ua,
+			})
+		}
+	}
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/admin", MaxAge: -1})
+	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+}
+
+// ---------------------------------------------------------------------------
+// Pages
+// ---------------------------------------------------------------------------
+
+func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
+	tenants, err := s.store.ListTenants(r.Context())
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if tok := tokenFromCtx(r.Context()); tok != nil && tok.TenantID != nil {
+		// Tenant-scoped token: filter to just its tenant.
+		var filtered []store.Tenant
+		for _, t := range tenants {
+			if t.ID == *tok.TenantID {
+				filtered = append(filtered, t)
+			}
+		}
+		tenants = filtered
+	}
+	s.renderLayout(w, r, "Tenants", "dashboard", map[string]any{
+		"Tenants": tenants,
+	})
+}
+
+func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if _, err := s.store.CreateTenant(r.Context(), r.FormValue("slug"), r.FormValue("name")); err != nil {
+		s.flashErr(w, r, "/admin/", err)
+		return
+	}
+	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+}
+
+func (s *Server) tenantDetail(w http.ResponseWriter, r *http.Request) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), tid) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+	tenant, err := s.store.GetTenant(ctx, tid)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+
+	data := map[string]any{"Tenant": tenant}
+
+	// Pull related entities (best-effort; missing data shouldn't crash the page).
+	data["Extensions"] = mustExtensions(ctx, s.store, tid)
+	data["Devices"] = mustDevices(ctx, s.store, tid)
+
+	// Phase 5.1: onboarding checklist counts so the tenant page can show
+	// a "Getting started" widget for new tenants.
+	trunkCount := 0
+	if accts, err := s.store.ListCarrierAccountsForTenant(ctx, tid); err == nil {
+		trunkCount = len(accts)
+	}
+	data["TrunkCount"] = trunkCount
+	data["RingGroups"], _ = s.store.ListRingGroupsForTenant(ctx, tid)
+	data["DIDs"], _ = s.store.ListDIDsForTenant(ctx, tid)
+	domains := mustSIPDomains(ctx, s.store, tid)
+	data["SIPDomains"] = domains
+	if d, err := s.store.PrimaryDomainForTenant(ctx, tid); err == nil {
+		data["PrimaryDomain"] = d
+	}
+	data["IVRs"], _ = listIVRs(ctx, s.store, tid)
+	data["Queues"], _ = listQueues(ctx, s.store, tid)
+
+	s.renderLayout(w, r, tenant.Name, "tenant", data)
+}
+
+// ---------------------------------------------------------------------------
+// Tenant detail — create handlers (POST → 303 back to tenant page)
+// ---------------------------------------------------------------------------
+
+func (s *Server) createSIPDomain(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := s.store.CreateSIPDomain(r.Context(), tid, r.FormValue("domain"), r.FormValue("is_primary") == "true"); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+func (s *Server) createExtension(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	domainID, err := uuid.Parse(r.FormValue("sip_domain_id"))
+	if err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), errors.New("a primary SIP domain is required"))
+		return
+	}
+	if _, err := s.store.CreateExtension(r.Context(), tid, domainID,
+		r.FormValue("extension"), "", "", r.FormValue("display_name")); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := s.store.CreateDevice(r.Context(), tid,
+		r.FormValue("mac"), r.FormValue("vendor"), r.FormValue("model"), r.FormValue("label")); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+func (s *Server) createRingGroup(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := s.store.CreateRingGroup(r.Context(), store.CreateRingGroupInput{
+		TenantID: tid, Extension: r.FormValue("extension"),
+		Name: r.FormValue("name"), Strategy: r.FormValue("strategy"),
+	}); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+func (s *Server) createIVR(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := s.store.CreateIVR(r.Context(), store.CreateIVRInput{
+		TenantID: tid, Extension: r.FormValue("extension"), Name: r.FormValue("name"),
+	}); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+func (s *Server) createQueue(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := s.store.CreateQueue(r.Context(), store.CreateQueueInput{
+		TenantID: tid, Extension: r.FormValue("extension"),
+		Name: r.FormValue("name"), Strategy: r.FormValue("strategy"),
+	}); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
+}
+
+// ---------------------------------------------------------------------------
+// CDRs
+// ---------------------------------------------------------------------------
+
+func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	tenant, err := s.store.GetTenant(r.Context(), tid)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	cdrs, _ := s.store.ListCDRsForTenant(r.Context(), tid, 200)
+	s.renderLayout(w, r, tenant.Name+" · CDRs", "cdrs", map[string]any{
+		"Tenant": tenant,
+		"CDRs":   cdrs,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Extension detail
+// ---------------------------------------------------------------------------
+
+func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	tenant, _ := s.store.GetTenant(r.Context(), ext.TenantID)
+	vmBox, _ := s.store.GetVoicemailBoxByExtensionID(r.Context(), id)
+
+	// Phase 5.1: SIP credentials section. Plaintext password is shown only
+	// when ?reveal=1 is set (so the page is safe to share a screenshot of
+	// otherwise). Domain comes from the extension's primary SIP domain.
+	_, password, domain, _ := s.store.GetExtensionSIPPassword(r.Context(), id)
+	reveal := r.URL.Query().Get("reveal") == "1"
+	host := s.sipPublicHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	s.renderLayout(w, r, "Ext "+ext.Extension, "extension", map[string]any{
+		"Tenant":         tenant,
+		"Extension":      ext,
+		"VoicemailBox":   vmBox,
+		"SIPDomain":      domain,
+		"SIPServerHost":  host,
+		"SIPServerPort":  s.sipPublicPort,
+		"SIPTransport":   s.sipPublicTransport,
+		"RevealPassword": reveal,
+		"SIPPassword":    password,
+	})
+}
+
+// extensionRotatePassword mints a new SIP password + HA1, audits, redirects
+// back with ?reveal=1 so the user sees the new value once.
+func (s *Server) extensionRotatePassword(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if _, err := s.store.RotateExtensionSIPPassword(r.Context(), id); err != nil {
+		s.flashErr(w, r, "/admin/extensions/"+id.String(), err)
+		return
+	}
+	ip, ua := audit.FromRequest(r)
+	var actorTok *uuid.UUID
+	if tok := tokenFromCtx(r.Context()); tok != nil {
+		actorTok = &tok.ID
+	}
+	s.audit.Log(r.Context(), audit.Event{
+		TenantID: &ext.TenantID, ActorTokenID: actorTok,
+		Event: "extension.password.rotated", TargetType: "extension", TargetID: &id,
+		IPAddress: ip, UserAgent: ua,
+	})
+	http.Redirect(w, r, "/admin/extensions/"+id.String()+"?reveal=1&flash=New+password+below.+Update+your+phone+now.", http.StatusSeeOther)
+}
+
+func (s *Server) extensionFeaturesUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	_ = r.ParseForm()
+	dnd := r.FormValue("do_not_disturb") == "true"
+	vm := r.FormValue("voicemail_enabled") == "true"
+	rec := r.FormValue("recording_enabled") == "true"
+	cfImm := r.FormValue("cf_immediate")
+	cfBusy := r.FormValue("cf_busy")
+	cfNA := r.FormValue("cf_no_answer")
+	if _, err := s.store.UpdateExtensionFeatures(r.Context(), id, store.UpdateExtensionFeaturesInput{
+		DoNotDisturb:     &dnd,
+		VoicemailEnabled: &vm,
+		RecordingEnabled: &rec,
+		CFImmediate:      &cfImm,
+		CFBusy:           &cfBusy,
+		CFNoAnswer:       &cfNA,
+	}); err != nil {
+		s.flashErr(w, r, "/admin/extensions/"+id.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/extensions/"+id.String()+"?flash=saved", http.StatusSeeOther)
+}
+
+func (s *Server) extensionVoicemailCreate(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := s.store.CreateVoicemailBox(r.Context(), store.CreateVoicemailBoxInput{
+		TenantID:    ext.TenantID,
+		ExtensionID: id,
+		PIN:         r.FormValue("pin"),
+		Email:       r.FormValue("email"),
+	}); err != nil {
+		s.flashErr(w, r, "/admin/extensions/"+id.String(), err)
+		return
+	}
+	http.Redirect(w, r, "/admin/extensions/"+id.String()+"?flash=voicemail+created", http.StatusSeeOther)
+}
+
+func (s *Server) lookupExtensionByID(ctx context.Context, id uuid.UUID) (*store.Extension, error) {
+	const q = `
+		SELECT e.id, e.tenant_id, e.sip_domain_id, e.extension, e.sip_username,
+		       '', e.user_id, COALESCE(e.display_name,''),
+		       e.voicemail_enabled,
+		       e.do_not_disturb, COALESCE(e.cf_immediate,''), COALESCE(e.cf_busy,''),
+		       COALESCE(e.cf_no_answer,''), e.recording_enabled,
+		       e.status, e.created_at, e.updated_at
+		  FROM extensions e WHERE e.id = $1`
+	var e store.Extension
+	err := s.store.DB.QueryRow(ctx, q, id).Scan(
+		&e.ID, &e.TenantID, &e.SIPDomainID, &e.Extension, &e.SIPUsername,
+		&e.SIPPassword, &e.UserID, &e.DisplayName,
+		&e.VoicemailEnabled,
+		&e.DoNotDisturb, &e.CFImmediate, &e.CFBusy, &e.CFNoAnswer, &e.RecordingEnabled,
+		&e.Status, &e.CreatedAt, &e.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// ---------------------------------------------------------------------------
+// API tokens
+// ---------------------------------------------------------------------------
+
+func (s *Server) apiTokensList(w http.ResponseWriter, r *http.Request) {
+	tokens, err := s.store.ListAPITokens(r.Context())
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	tenants, _ := s.store.ListTenants(r.Context())
+	s.renderLayout(w, r, "API tokens", "api_tokens", map[string]any{
+		"Tokens":   tokens,
+		"Tenants":  tenants,
+		"NewToken": r.URL.Query().Get("new"),
+	})
+}
+
+func (s *Server) apiTokensCreate(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	in := store.CreateAPITokenInput{
+		Name:  r.FormValue("name"),
+		Scope: r.FormValue("scope"),
+	}
+	if v := r.FormValue("tenant_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			in.TenantID = &id
+		}
+	}
+	if v := r.FormValue("expires_in"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			t := time.Now().Add(d)
+			in.ExpiresAt = &t
+		}
+	}
+	issued, err := s.store.CreateAPIToken(r.Context(), in)
+	if err != nil {
+		s.flashErr(w, r, "/admin/api-tokens", err)
+		return
+	}
+	http.Redirect(w, r, "/admin/api-tokens?new="+issued.Plaintext, http.StatusSeeOther)
+}
+
+func (s *Server) apiTokensRevoke(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "tokenID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	_ = s.store.RevokeAPIToken(r.Context(), id)
+	http.Redirect(w, r, "/admin/api-tokens", http.StatusSeeOther)
+}
+
+// ---------------------------------------------------------------------------
+// Render helpers
+// ---------------------------------------------------------------------------
+
+func (s *Server) render(w http.ResponseWriter, name string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpls.ExecuteTemplate(w, name, data); err != nil {
+		slog.Error("portal render", "template", name, "err", err)
+	}
+}
+
+func (s *Server) renderLayout(w http.ResponseWriter, r *http.Request, title, contentTmpl string, data map[string]any) {
+	data["Title"] = title
+	// Each content template defines its own uniquely-named block, e.g.
+	// "dashboard_content". The layout template invokes {{template .ContentName .}}.
+	data["ContentName"] = contentTmpl + "_content"
+
+	tok := tokenFromCtx(r.Context())
+	data["User"] = tok
+
+	// Phase 4.4: thread memberships + current-tenant into the layout so
+	// the nav can render a workspace switcher.
+	// Phase 4.9: also thread the SessionUser (resolved from the portal:
+	// token name) so the layout can render the verify-email banner.
+	if tok != nil {
+		if user, _ := s.userFromSessionToken(r.Context(), tok); user != nil {
+			if memberships, err := s.store.ListMembershipsForUser(r.Context(), user.ID); err == nil {
+				data["Memberships"] = memberships
+			}
+			data["SessionUser"] = user
+			data["EmailUnverified"] = user.EmailVerifiedAt == nil && user.Role != "super_admin"
+		}
+		if tok.TenantID != nil {
+			data["CurrentTenantID"] = *tok.TenantID
+		}
+	}
+
+	if f := r.URL.Query().Get("flash"); f != "" {
+		data["Flash"] = f
+	}
+	if f := r.URL.Query().Get("err"); f != "" {
+		data["Flash"] = f
+		data["FlashErr"] = true
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpls.ExecuteTemplate(w, "layout", data); err != nil {
+		slog.Error("portal render layout", "content", contentTmpl, "err", err)
+	}
+}
+
+func (s *Server) errPage(w http.ResponseWriter, _ *http.Request, err error) {
+	slog.Error("portal", "err", err)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+func (s *Server) flashErr(w http.ResponseWriter, r *http.Request, back string, err error) {
+	sep := "?"
+	if strings.Contains(back, "?") {
+		sep = "&"
+	}
+	http.Redirect(w, r, back+sep+"err="+template.URLQueryEscaper(err.Error()), http.StatusSeeOther)
+}
+
+func (s *Server) parseTenantParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		http.Error(w, "bad tenant id", 400)
+		return uuid.Nil, false
+	}
+	if !s.canAccessTenant(r.Context(), tid) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return uuid.Nil, false
+	}
+	return tid, true
+}
+
+func (s *Server) canAccessTenant(ctx context.Context, tid uuid.UUID) bool {
+	tok := tokenFromCtx(ctx)
+	if tok == nil || tok.TenantID == nil {
+		return true // super-admin
+	}
+	return *tok.TenantID == tid
+}
+
+// Funcs available in templates. `dyntemplate` lets the layout pick the
+// content block by variable name (Go's `template` action requires a literal).
+var funcs template.FuncMap
+
+func init() {
+	funcs = template.FuncMap{
+		"deref": func(s any) string {
+			if p, ok := s.(*string); ok && p != nil {
+				return *p
+			}
+			if str, ok := s.(string); ok {
+				return str
+			}
+			return ""
+		},
+		// dyntemplate is rebound per-Server in New() to close over s.tmpls.
+		// This placeholder lets the templates parse.
+		"dyntemplate": func(name string, data any) (template.HTML, error) {
+			return "", nil
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Per-entity list helpers — kept tiny since the store package doesn't yet
+// have generic "list extensions/devices for tenant" methods.
+// ---------------------------------------------------------------------------
+
+func mustExtensions(ctx context.Context, st *store.Store, tid uuid.UUID) []store.Extension {
+	const q = `
+		SELECT e.id, e.tenant_id, e.sip_domain_id, e.extension, e.sip_username,
+		       '', e.user_id, COALESCE(e.display_name,''),
+		       e.voicemail_enabled,
+		       e.do_not_disturb, COALESCE(e.cf_immediate,''), COALESCE(e.cf_busy,''),
+		       COALESCE(e.cf_no_answer,''), e.recording_enabled,
+		       e.status, e.created_at, e.updated_at
+		  FROM extensions e
+		 WHERE e.tenant_id = $1 AND e.status = 'active'
+		 ORDER BY e.extension`
+	rows, err := st.DB.Query(ctx, q, tid)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []store.Extension
+	for rows.Next() {
+		var e store.Extension
+		if err := rows.Scan(
+			&e.ID, &e.TenantID, &e.SIPDomainID, &e.Extension, &e.SIPUsername,
+			&e.SIPPassword, &e.UserID, &e.DisplayName,
+			&e.VoicemailEnabled,
+			&e.DoNotDisturb, &e.CFImmediate, &e.CFBusy, &e.CFNoAnswer, &e.RecordingEnabled,
+			&e.Status, &e.CreatedAt, &e.UpdatedAt,
+		); err == nil {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func mustDevices(ctx context.Context, st *store.Store, tid uuid.UUID) []store.Device {
+	const q = `
+		SELECT mac::text, tenant_id, vendor, model, COALESCE(firmware,''),
+		       provisioning_token, COALESCE(label,''),
+		       last_provisioned_at, COALESCE(host(last_provisioned_ip),''),
+		       COALESCE(user_agent,''),
+		       rps_synced_at, COALESCE(rps_last_error,''),
+		       created_at, updated_at
+		  FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`
+	rows, err := st.DB.Query(ctx, q, tid)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []store.Device
+	for rows.Next() {
+		var d store.Device
+		if err := rows.Scan(
+			&d.MAC, &d.TenantID, &d.Vendor, &d.Model, &d.Firmware,
+			&d.ProvisioningToken, &d.Label,
+			&d.LastProvisionedAt, &d.LastProvisionedIP, &d.UserAgent,
+			&d.RPSSyncedAt, &d.RPSLastError,
+			&d.CreatedAt, &d.UpdatedAt,
+		); err == nil {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func mustSIPDomains(ctx context.Context, st *store.Store, tid uuid.UUID) []store.SIPDomain {
+	const q = `SELECT id, tenant_id, domain, is_primary, created_at
+	            FROM sip_domains WHERE tenant_id = $1 ORDER BY is_primary DESC, domain`
+	rows, err := st.DB.Query(ctx, q, tid)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []store.SIPDomain
+	for rows.Next() {
+		var d store.SIPDomain
+		if err := rows.Scan(&d.ID, &d.TenantID, &d.Domain, &d.IsPrimary, &d.CreatedAt); err == nil {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func listIVRs(ctx context.Context, st *store.Store, tid uuid.UUID) ([]store.IVR, error) {
+	const q = `
+		SELECT id, tenant_id, name, COALESCE(extension,''),
+		       greeting_long, greeting_short, invalid_sound, exit_sound,
+		       timeout_ms, inter_digit_timeout_ms,
+		       max_failures, max_timeouts, digit_len,
+		       enabled, created_at, updated_at
+		  FROM ivrs WHERE tenant_id = $1 AND enabled = true ORDER BY extension NULLS LAST`
+	rows, err := st.DB.Query(ctx, q, tid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.IVR
+	for rows.Next() {
+		var v store.IVR
+		if err := rows.Scan(
+			&v.ID, &v.TenantID, &v.Name, &v.Extension,
+			&v.GreetingLong, &v.GreetingShort, &v.InvalidSound, &v.ExitSound,
+			&v.TimeoutMS, &v.InterDigitTimeoutMS,
+			&v.MaxFailures, &v.MaxTimeouts, &v.DigitLen,
+			&v.Enabled, &v.CreatedAt, &v.UpdatedAt,
+		); err == nil {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+func listQueues(ctx context.Context, st *store.Store, tid uuid.UUID) ([]store.Queue, error) {
+	const q = `
+		SELECT id, tenant_id, COALESCE(extension,''), name, strategy, moh_sound,
+		       COALESCE(record_template,''), time_base_score,
+		       max_wait_time, max_wait_no_agent, max_wait_no_agent_time_reached,
+		       tier_rules_apply, tier_rule_wait_second, tier_rule_no_agent_no_wait,
+		       discard_abandoned_after, abandoned_resume_allowed,
+		       COALESCE(announce_sound,''),
+		       enabled, created_at, updated_at
+		  FROM queues WHERE tenant_id = $1 AND enabled = true ORDER BY extension NULLS LAST`
+	rows, err := st.DB.Query(ctx, q, tid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Queue
+	for rows.Next() {
+		var q store.Queue
+		if err := rows.Scan(
+			&q.ID, &q.TenantID, &q.Extension, &q.Name, &q.Strategy, &q.MOHSound,
+			&q.RecordTemplate, &q.TimeBaseScore,
+			&q.MaxWaitTime, &q.MaxWaitNoAgent, &q.MaxWaitNoAgentTimeReached,
+			&q.TierRulesApply, &q.TierRuleWaitSecond, &q.TierRuleNoAgentNoWait,
+			&q.DiscardAbandonedAfter, &q.AbandonedResumeAllowed,
+			&q.AnnounceSound,
+			&q.Enabled, &q.CreatedAt, &q.UpdatedAt,
+		); err == nil {
+			out = append(out, q)
+		}
+	}
+	return out, nil
+}

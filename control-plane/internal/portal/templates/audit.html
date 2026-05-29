@@ -1,0 +1,56 @@
+{{define "audit_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Audit log</h1>
+  <span class="muted">slug <code>{{$t.Slug}}</code></span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a>
+</nav>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Security settings</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/security">
+    <label>
+      <input type="checkbox" name="require_email_verified" value="true" {{if .RequireVerified}}checked{{end}}>
+      Require verified email before sign-in
+    </label>
+    <label>
+      <input type="checkbox" name="require_2fa" value="true" {{if .Require2FA}}checked{{end}}>
+      Require two-factor authentication (TOTP) for all members
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  <p class="muted" style="margin-top:0.5rem;font-size:0.85rem">
+    Email gate: users without <code>email_verified_at</code> see a verify prompt.
+    2FA gate (grace mode): members without an enrolled authenticator are
+    redirected to <code>/admin/security/2fa</code> until they enroll —
+    they can still log in, but every other page bounces them to the setup
+    flow. Super-admins exempt from both.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Recent events <span class="muted">({{len .Entries}})</span></h2>
+  {{if .Entries}}
+  <table>
+    <thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+      {{range .Entries}}
+      <tr>
+        <td class="muted"><code>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</code></td>
+        <td><span class="pill">{{.Event}}</span></td>
+        <td>{{if .ActorEmail}}<code>{{.ActorEmail}}</code>{{else if .ActorUserID}}<code>{{.ActorUserID}}</code>{{else if .ActorTokenID}}<span class="muted">token</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if .TargetType}}<code>{{.TargetType}}{{if .TargetID}}:{{.TargetID}}{{end}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="muted"><code>{{.IPAddress}}</code></td>
+        <td><details><summary class="muted">payload</summary><pre style="margin:0;font-size:0.78rem">{{printf "%s" .Payload}}</pre></details></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No events yet.</p>
+  {{end}}
+</section>
+{{end}}

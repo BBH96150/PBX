@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+  FreeSWITCH root config. Trimmed down vs. the stock vanilla tree:
+  - Auth is handled by Kamailio; FS trusts inbound from Kamailio by ACL.
+  - Dialplan is resolved via mod_xml_curl (HTTP to the Go control plane).
+  - No directory/user XML — Kamailio owns subscriber identity.
+-->
+<document type="freeswitch/xml">
+
+  <X-PRE-PROCESS cmd="include" data="vars.xml"/>
+
+  <section name="configuration" description="Various Configuration">
+    <X-PRE-PROCESS cmd="include" data="autoload_configs/*.xml"/>
+  </section>
+
+  <section name="dialplan" description="Regex/XML Dialplan">
+    <X-PRE-PROCESS cmd="include" data="dialplan/*.xml"/>
+  </section>
+
+  <!-- Static directory left empty; FS won't authenticate users because Kamailio does. -->
+  <section name="directory" description="User Directory"/>
+
+  <!--
+    SIP profiles load via the autoload mechanism (sofia.conf.xml or scan of
+    sip_profiles/). Phase 2 adds external.xml for PSTN-facing traffic.
+    Sofia is configured to scan sip_profiles/ by default — no extra wiring
+    needed here.
+  -->
+
+</document>

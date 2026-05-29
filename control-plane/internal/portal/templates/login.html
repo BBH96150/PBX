@@ -1,0 +1,63 @@
+{{define "login"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign in · SIP Platform</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+    main { width: 100%; max-width: 26rem; }
+    h1 { margin-bottom: 0.25rem; }
+    details { margin-top: 1rem; }
+    .switch { margin-top: 0.5rem; font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>SIP Platform</h1>
+  <p class="muted">Sign in to the admin portal.</p>
+  {{if .Flash}}<article class="contrast">{{.Flash}}</article>{{end}}
+
+  <form method="post" action="/admin/login">
+    <label>Email
+      <input type="email" name="email" autocomplete="username" autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password">
+    </label>
+    <button type="submit">Sign in</button>
+    <p style="margin-top:0.5rem;font-size:0.88rem"><a href="/admin/forgot-password">Forgot your password?</a></p>
+  </form>
+
+  <details style="margin-top:1rem">
+    <summary class="switch">Use single sign-on (SSO)</summary>
+    <form method="post" action="/admin/login/sso" style="margin-top:0.5rem">
+      <label>Work email
+        <input type="email" name="email" placeholder="you@company.com" autocomplete="username">
+      </label>
+      <button type="submit" class="secondary">Continue with SSO →</button>
+    </form>
+    <p class="muted" style="margin-top:0.5rem;font-size:0.82rem">
+      We'll redirect you to your workspace's identity provider (Google, Microsoft, Okta, etc.).
+    </p>
+  </details>
+
+  <details>
+    <summary class="switch">Use an API token instead</summary>
+    <form method="post" action="/admin/login" style="margin-top:0.5rem">
+      <label>API token
+        <input type="password" name="token" placeholder="sip_…">
+      </label>
+      <button type="submit" class="secondary">Sign in with token</button>
+    </form>
+  </details>
+
+  <small class="muted" style="display:block;margin-top:1rem">
+    No login yet? Set <code>BOOTSTRAP_USER_EMAIL</code> + <code>BOOTSTRAP_USER_PASSWORD</code>
+    in the control-plane env. They seed a super-admin on first boot when the
+    <code>users</code> table is empty.
+  </small>
+</main>
+</body>
+</html>
+{{end}}

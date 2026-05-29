@@ -1,0 +1,26 @@
+{{define "verify_email_result"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Email verification · SIP Platform</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+    main { width: 100%; max-width: 28rem; }
+  </style>
+</head>
+<body>
+<main>
+  {{if .Bad}}
+    <h1>Verification problem</h1>
+    <article class="contrast">{{.Flash}}</article>
+    <p><a href="/admin/login">Sign in to request a new link</a></p>
+  {{else}}
+    <h1>Email verified ✓</h1>
+    <p>Thanks — {{if .Email}}<code>{{.Email}}</code>{{else}}your email{{end}} is now verified.</p>
+    <p><a href="/admin/login" role="button">Sign in</a></p>
+  {{end}}
+</main>
+</body>
+</html>
+{{end}}

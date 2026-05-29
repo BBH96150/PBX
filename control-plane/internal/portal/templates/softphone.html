@@ -1,0 +1,211 @@
+{{define "softphone_content"}}
+{{$data := .Data}}
+<div class="row">
+  <h1 style="margin:0">Web softphone</h1>
+  <span class="muted">{{with .SessionUser}}{{.Email}}{{end}}</span>
+</div>
+
+<article class="contrast" style="margin-top:1rem;font-size:0.85rem">
+  ⚠ <strong>Phase 5.0 MVP.</strong> Signaling (REGISTER, INVITE) works end-to-end through Kamailio.
+  Media (audio) over WebRTC requires DTLS-SRTP termination on FreeSWITCH — wave 5.0b.
+  You'll see calls ring; the audio path may be silent in this OrbStack dev environment until that lands.
+</article>
+
+{{if not $data.OwnedExtensions}}
+<section class="card" style="margin-top:1rem">
+  <h2>No extension assigned</h2>
+  <p>Ask a tenant admin to attach an extension to your user account, then come back here.</p>
+</section>
+{{else}}
+<section class="card" style="margin-top:1rem">
+  <h2>Connect</h2>
+  <form id="sp-connect" onsubmit="return spConnect(event)">
+    <label>Extension
+      <select name="extension_id" id="sp-ext">
+        {{range $data.OwnedExtensions}}
+        <option value="{{.ID}}">{{.Extension}} — {{.DisplayName}} (<code>{{.SIPUsername}}</code>)</option>
+        {{end}}
+      </select>
+    </label>
+    <button type="submit" id="sp-connect-btn">Open softphone</button>
+    <span id="sp-status" class="muted" style="margin-left:0.75rem"></span>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem; display:none" id="sp-dialer">
+  <h2>Place a call</h2>
+  <form onsubmit="return spDial(event)" class="inline">
+    <label>Number / Extension
+      <input id="sp-target" name="target" placeholder="1002 or +14155551234" autocomplete="off" required>
+    </label>
+    <button type="submit" id="sp-dial-btn">Call</button>
+    <button type="button" id="sp-hangup-btn" class="secondary" onclick="spHangup()" disabled>Hang up</button>
+    <button type="button" id="sp-mute-btn" class="secondary" onclick="spMute()" disabled>Mute</button>
+  </form>
+  <p class="muted" style="margin-top:0.5rem">
+    Call state: <strong id="sp-callstate">idle</strong>
+  </p>
+  <audio id="sp-remote-audio" autoplay></audio>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Diagnostics</h2>
+  <pre id="sp-log" style="height:14rem;overflow:auto;font-size:0.78rem;background:var(--pico-code-background-color);padding:0.5rem"></pre>
+</section>
+{{end}}
+
+<script src="https://unpkg.com/sip.js@0.21.2/dist/sip.min.js"></script>
+<script>
+(function () {
+  const wsURL = {{$data.WSURL | printf "%q"}};
+  let ua = null, session = null, regInfo = null;
+
+  const log = (...args) => {
+    const el = document.getElementById('sp-log');
+    if (!el) return;
+    el.textContent += args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ') + '\n';
+    el.scrollTop = el.scrollHeight;
+  };
+  const setStatus = (s) => { document.getElementById('sp-status').textContent = s; };
+  const setCallState = (s) => { document.getElementById('sp-callstate').textContent = s; };
+
+  window.spConnect = async function (e) {
+    e.preventDefault();
+    document.getElementById('sp-connect-btn').disabled = true;
+    setStatus('issuing credentials…');
+    const extID = document.getElementById('sp-ext').value;
+    const fd = new FormData();
+    fd.append('extension_id', extID);
+    let creds;
+    try {
+      const r = await fetch('/admin/softphone/credentials', { method: 'POST', body: fd });
+      if (!r.ok) throw new Error('credential issue failed: ' + r.status);
+      creds = await r.json();
+    } catch (err) {
+      setStatus('error: ' + err.message);
+      document.getElementById('sp-connect-btn').disabled = false;
+      return false;
+    }
+    log('credentials issued for', creds.username, '@', creds.domain);
+    setStatus('connecting WS…');
+    try {
+      ua = new SIP.UserAgent({
+        uri: SIP.UserAgent.makeURI('sip:' + creds.username + '@' + creds.domain),
+        authorizationUsername: creds.username,
+        authorizationPassword: creds.password,
+        displayName: creds.display_name || creds.extension,
+        transportOptions: {
+          server: wsURL,
+          traceSip: true,
+        },
+        sessionDescriptionHandlerFactoryOptions: {
+          peerConnectionConfiguration: {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+          },
+        },
+        logBuiltinEnabled: false,
+        logConfiguration: false,
+      });
+      ua.delegate = {
+        onInvite(inv) {
+          log('incoming INVITE from', inv.remoteIdentity.uri.toString());
+          session = inv;
+          setCallState('incoming — auto-accepting');
+          inv.accept().then(() => attachAudio(inv));
+          wireSessionEvents(inv);
+        },
+      };
+      await ua.start();
+      log('UA started, registering…');
+      regInfo = new SIP.Registerer(ua);
+      regInfo.stateChange.addListener((newState) => {
+        log('registration state:', newState);
+        if (newState === 'Registered') {
+          setStatus('registered as ' + creds.username);
+          document.getElementById('sp-dialer').style.display = 'block';
+        }
+      });
+      await regInfo.register();
+    } catch (err) {
+      setStatus('UA error: ' + err.message);
+      log('UA error:', err.stack || err.message);
+      document.getElementById('sp-connect-btn').disabled = false;
+    }
+    return false;
+  };
+
+  window.spDial = async function (e) {
+    e.preventDefault();
+    if (!ua) { return false; }
+    const target = document.getElementById('sp-target').value.trim();
+    if (!target) return false;
+    const uri = SIP.UserAgent.makeURI('sip:' + target + '@' + ua.configuration.uri.host);
+    const inv = new SIP.Inviter(ua, uri, {
+      sessionDescriptionHandlerOptions: {
+        constraints: { audio: true, video: false },
+      },
+    });
+    session = inv;
+    wireSessionEvents(inv);
+    setCallState('dialing ' + target);
+    try {
+      await inv.invite();
+    } catch (err) {
+      log('invite error:', err.message);
+      setCallState('failed: ' + err.message);
+    }
+    return false;
+  };
+
+  window.spHangup = function () {
+    if (!session) return;
+    try {
+      if (session.state === 'Established') session.bye();
+      else if (session.state === 'Initial' || session.state === 'Establishing') session.cancel();
+      else session.reject();
+    } catch (err) { log('hangup error:', err.message); }
+    setCallState('idle');
+    document.getElementById('sp-hangup-btn').disabled = true;
+    document.getElementById('sp-mute-btn').disabled = true;
+    session = null;
+  };
+
+  let muted = false;
+  window.spMute = function () {
+    if (!session || !session.sessionDescriptionHandler) return;
+    const pc = session.sessionDescriptionHandler.peerConnection;
+    if (!pc) return;
+    muted = !muted;
+    pc.getSenders().forEach(s => {
+      if (s.track && s.track.kind === 'audio') s.track.enabled = !muted;
+    });
+    document.getElementById('sp-mute-btn').textContent = muted ? 'Unmute' : 'Mute';
+  };
+
+  function wireSessionEvents(s) {
+    s.stateChange.addListener((newState) => {
+      log('session state:', newState);
+      setCallState(newState);
+      if (newState === 'Established') {
+        document.getElementById('sp-hangup-btn').disabled = false;
+        document.getElementById('sp-mute-btn').disabled = false;
+        attachAudio(s);
+      }
+      if (newState === 'Terminated') {
+        document.getElementById('sp-hangup-btn').disabled = true;
+        document.getElementById('sp-mute-btn').disabled = true;
+        session = null;
+      }
+    });
+  }
+
+  function attachAudio(s) {
+    const pc = s.sessionDescriptionHandler && s.sessionDescriptionHandler.peerConnection;
+    if (!pc) return;
+    const remoteStream = new MediaStream();
+    pc.getReceivers().forEach(r => { if (r.track) remoteStream.addTrack(r.track); });
+    document.getElementById('sp-remote-audio').srcObject = remoteStream;
+  }
+})();
+</script>
+{{end}}

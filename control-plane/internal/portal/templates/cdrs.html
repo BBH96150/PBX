@@ -1,0 +1,36 @@
+{{define "cdrs_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · CDRs</h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to tenant</a>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Recent calls ({{len .CDRs}} shown, most recent first)</h2>
+  {{if .CDRs}}
+  <table>
+    <thead>
+      <tr>
+        <th>Started</th><th>Dir</th><th>From</th><th>To</th>
+        <th>Dur</th><th>Billed</th><th>Disp</th><th>Cause</th><th>Recording</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .CDRs}}
+      <tr>
+        <td class="muted">{{.StartedAt.Format "2006-01-02 15:04:05"}}</td>
+        <td><span class="pill">{{.Direction}}</span></td>
+        <td><code>{{.CallerIDNum}}</code>{{if .CallerIDName}} <span class="muted">{{.CallerIDName}}</span>{{end}}</td>
+        <td><code>{{.ToURI}}</code></td>
+        <td>{{if .DurationSec}}{{.DurationSec}}s{{else}}—{{end}}</td>
+        <td>{{if .BillableSec}}{{.BillableSec}}s{{else}}—{{end}}</td>
+        <td>{{if .Disposition}}<span class="pill {{if eq (deref .Disposition) "ANSWERED"}}pill-ok{{else}}pill-warn{{end}}">{{deref .Disposition}}</span>{{else}}—{{end}}</td>
+        <td class="muted">{{.HangupCause}}</td>
+        <td>{{if .RecordingPath}}<span class="pill">recorded</span>{{else}}—{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No calls yet. Once you wire up FreeSWITCH and place a call, CDRs land here via ESL.</p>{{end}}
+</section>
+{{end}}

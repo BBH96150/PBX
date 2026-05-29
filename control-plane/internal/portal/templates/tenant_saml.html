@@ -1,0 +1,78 @@
+{{define "tenant_saml_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · SAML 2.0</h1>
+  <span class="muted">slug <code>{{$t.Slug}}</code></span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/sso">OIDC SSO</a>
+</nav>
+
+{{if not .KeyReady}}
+<article class="contrast" style="margin-top:1rem">
+  ⚠ SAML is disabled in this deployment — <code>SAML_SP_CERT_PEM</code> and
+  <code>SAML_SP_KEY_PEM</code> are not set on the control plane.
+  Generate a self-signed keypair (see <code>internal/sso/saml_keygen.go</code>)
+  and put them in env before saving an SAML config.
+</article>
+{{end}}
+
+{{if and .HasOIDC (not .Config)}}
+<article class="contrast" style="margin-top:1rem">
+  This tenant already has OIDC configured. Disable OIDC on the
+  <a href="/admin/tenants/{{$t.ID}}/sso">SSO page</a> before enabling SAML
+  (one provider per tenant).
+</article>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Service Provider metadata</h2>
+  <p class="muted">Give this URL to your IdP admin to register us as a SAML SP:</p>
+  <p><code style="word-break:break-all">{{.PortalBase}}/admin/sso/saml/metadata</code></p>
+  <p class="muted" style="font-size:0.85rem">
+    The SP keypair is shared across all tenants on this platform —
+    it's loaded from the control-plane env and rotated by the operator.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>IdP configuration</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/saml">
+    <label>Label
+      <input name="label" placeholder="Acme Okta" value="{{if .Config}}{{.Config.Label}}{{end}}">
+    </label>
+    <label>IdP metadata URL (optional — we'll fetch + paste on save)
+      <input name="idp_metadata_url" value="{{if .Config}}{{.Config.IDPMetadataURL}}{{end}}">
+    </label>
+    <label>IdP metadata XML
+      <textarea name="idp_metadata_xml" rows="8" style="font-family:ui-monospace,SF Mono,monospace;font-size:0.78rem" placeholder="Paste your IdP's metadata XML here (or leave blank if a metadata URL is supplied above).">{{if .Config}}{{.Config.IDPMetadataXML}}{{end}}</textarea>
+    </label>
+    <details>
+      <summary>Advanced</summary>
+      <label>SP entityID override (default: <code>{{.PortalBase}}/admin/sso/saml/metadata</code>)
+        <input name="entity_id_override" value="{{if .Config}}{{.Config.EntityIDOverride}}{{end}}">
+      </label>
+      <label>Email attribute name (default: <code>email</code>)
+        <input name="attr_email" value="{{if .Config}}{{.Config.AttrEmail}}{{else}}email{{end}}">
+      </label>
+      <label>Name attribute (default: <code>name</code>)
+        <input name="attr_name" value="{{if .Config}}{{.Config.AttrName}}{{else}}name{{end}}">
+      </label>
+    </details>
+    <label>
+      <input type="checkbox" name="enabled" value="true" {{if or (not .Config) .Config.Enabled}}checked{{end}}>
+      Enabled
+    </label>
+    <button type="submit">Save SAML config</button>
+    {{if .Config}}
+      <button type="submit" formaction="/admin/tenants/{{$t.ID}}/saml/disable" class="secondary">Disable</button>
+    {{end}}
+  </form>
+  <p class="muted" style="margin-top:0.5rem;font-size:0.85rem">
+    Callback URL (ACS): <code>{{.PortalBase}}/admin/sso/saml/callback</code><br>
+    Bookmarkable login: <code>{{.PortalBase}}/admin/sso/saml/{{$t.Slug}}/login</code>
+  </p>
+</section>
+{{end}}

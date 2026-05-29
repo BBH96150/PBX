@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!--
+  Internal SIP profile — receives calls from Kamailio.
+  No auth (Kamailio already authenticated); trusted by source IP.
+  Speaks to phones indirectly (every leg goes through Kamailio).
+-->
+<profile name="internal">
+  <aliases/>
+
+  <gateways/>
+
+  <domains>
+    <!-- No XML directory; we don't authenticate or look up users locally. -->
+  </domains>
+
+  <settings>
+    <param name="user-agent-string" value="SIPPlatform/Phase1"/>
+
+    <!-- Bind -->
+    <param name="sip-ip" value="$${local_ip_v4}"/>
+    <param name="rtp-ip" value="$${local_ip_v4}"/>
+    <param name="sip-port" value="$${internal_sip_port}"/>
+
+    <!-- Auth: trust Kamailio by source IP, do not challenge -->
+    <param name="auth-calls" value="false"/>
+    <param name="accept-blind-auth" value="true"/>
+    <param name="accept-blind-reg" value="true"/>
+    <param name="apply-inbound-acl" value="any_v4"/>      <!-- tighten in prod -->
+
+    <!-- Codecs -->
+    <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${outbound_codec_prefs}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+    <param name="disable-transcoding" value="false"/>
+
+    <!-- Behavior -->
+    <param name="dialplan" value="XML"/>
+    <param name="context" value="default"/>
+    <param name="dtmf-duration" value="2000"/>
+    <param name="rfc2833-pt" value="101"/>
+    <param name="rtp-timer-name" value="soft"/>
+    <param name="hold-music" value="silence_stream://-1"/>
+
+    <!-- Media handling -->
+    <param name="rtp-autoflush-during-bridge" value="true"/>
+    <param name="disable-rtp-auto-adjust" value="false"/>
+    <param name="inbound-late-negotiation" value="true"/>
+    <param name="inbound-zrtp-passthru" value="false"/>
+
+    <!-- Liveness with Kamailio -->
+    <param name="liberal-dtmf" value="true"/>
+    <param name="enable-100rel" value="true"/>
+    <param name="manage-presence" value="false"/>
+
+    <!-- Logging -->
+    <param name="log-auth-failures" value="true"/>
+    <param name="forward-unsolicited-mwi-notify" value="false"/>
+  </settings>
+</profile>

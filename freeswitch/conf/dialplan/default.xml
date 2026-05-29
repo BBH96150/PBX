@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!--
+  Static dialplan fallback. mod_xml_curl will serve dynamic XML from the Go
+  control plane for any context the curl binding matches; this file only
+  handles a couple of always-on internal numbers so a hard failure of the
+  control plane still gives us "press 9999 to test echo".
+-->
+<include>
+  <context name="default">
+
+    <!-- Echo test: dial 9999 to hear yourself (useful when verifying audio). -->
+    <extension name="echo">
+      <condition field="destination_number" expression="^9999$">
+        <action application="answer"/>
+        <action application="echo"/>
+      </condition>
+    </extension>
+
+    <!-- Speak the calling extension back to you for routing sanity. -->
+    <extension name="info">
+      <condition field="destination_number" expression="^9001$">
+        <action application="answer"/>
+        <action application="info"/>
+        <action application="sleep" data="500"/>
+        <action application="hangup"/>
+      </condition>
+    </extension>
+
+    <!-- Static dialplan fallback for *97 (voicemail check). The control
+         plane normally serves this via mod_xml_curl; this stub keeps the
+         feature working if the control plane is down. -->
+    <extension name="voicemail-check-fallback">
+      <condition field="destination_number" expression="^\*97$">
+        <action application="answer"/>
+        <action application="sleep" data="500"/>
+        <action application="voicemail" data="check default ${domain_name} ${caller_id_number}"/>
+      </condition>
+    </extension>
+
+  </context>
+
+  <!--
+    Public context (Phase 2): inbound PSTN traffic from carrier gateways.
+    Everything dispatches to mod_xml_curl (control plane); this static stub
+    only kicks in if the control plane is unreachable.
+  -->
+  <context name="public">
+    <extension name="public-fallback">
+      <condition>
+        <action application="answer"/>
+        <action application="playback" data="ivr/ivr-call_cannot_be_completed_as_dialed.wav"/>
+        <action application="hangup" data="NO_ROUTE_DESTINATION"/>
+      </condition>
+    </extension>
+  </context>
+</include>

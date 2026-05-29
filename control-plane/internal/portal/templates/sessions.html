@@ -1,0 +1,37 @@
+{{define "sessions_content"}}
+<div class="row">
+  <h1 style="margin:0">Active sessions</h1>
+  <span class="muted">{{.User.Email}}</span>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Portal sessions <span class="muted">({{len .Sessions}})</span></h2>
+  {{if .Sessions}}
+  <table>
+    <thead><tr><th>Started</th><th>Last seen</th><th>Token prefix</th><th>Scope</th><th></th></tr></thead>
+    <tbody>
+      {{range .Sessions}}
+      <tr>
+        <td class="muted">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+        <td class="muted">{{if .LastUsedAt}}{{.LastUsedAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+        <td><code>{{.TokenPrefix}}…</code>{{if eq .ID $.CurrentTokenID}} <span class="pill pill-ok">this session</span>{{end}}</td>
+        <td><span class="pill">{{.Scope}}</span></td>
+        <td>
+          {{if ne .ID $.CurrentTokenID}}
+          <form method="post" action="/admin/security/sessions/{{.ID}}/revoke" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Revoke</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <form method="post" action="/admin/security/sessions/revoke-all" style="margin-top:0.75rem">
+    <button type="submit" class="secondary">Sign out of all other sessions</button>
+  </form>
+  {{else}}
+  <p class="muted">No portal sessions found. (Hand-issued API tokens aren't shown here.)</p>
+  {{end}}
+</section>
+{{end}}

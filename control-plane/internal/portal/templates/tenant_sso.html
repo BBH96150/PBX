@@ -1,0 +1,91 @@
+{{define "tenant_sso_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · SSO</h1>
+  <span class="muted">slug <code>{{$t.Slug}}</code></span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a>
+</nav>
+
+{{if not .SealerReady}}
+<article class="contrast" style="margin-top:1rem">
+  ⚠ SSO is disabled in this deployment — <code>TOTP_ENCRYPTION_KEY</code> is not set
+  (the same env key seals OIDC client secrets). Configure it before saving an SSO config.
+</article>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>OIDC provider</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/sso">
+    <label>Label
+      <input name="label" placeholder="Acme Google Workspace" value="{{if .Config}}{{.Config.Label}}{{end}}">
+    </label>
+    <label>Issuer URL
+      <input name="issuer_url" placeholder="https://accounts.google.com" value="{{if .Config}}{{.Config.IssuerURL}}{{end}}" required>
+    </label>
+    <label>Client ID
+      <input name="client_id" value="{{if .Config}}{{.Config.ClientID}}{{end}}" required>
+    </label>
+    <label>Client secret
+      <input type="password" name="client_secret" placeholder="{{if .Config}}(leave blank to keep current){{else}}from your IdP{{end}}" {{if not .Config}}required{{end}}>
+    </label>
+    <label>Scopes
+      <input name="scopes" value="{{if .Config}}{{.Config.Scopes}}{{else}}openid email profile{{end}}">
+    </label>
+    <label>
+      <input type="checkbox" name="enabled" value="true" {{if or (not .Config) .Config.Enabled}}checked{{end}}>
+      Enabled
+    </label>
+    <label>
+      <input type="checkbox" name="require_sso" value="true" {{if .RequireSSO}}checked{{end}}>
+      Require SSO for all members (block password login)
+    </label>
+    <button type="submit">Save</button>
+    {{if .Config}}
+      <button type="submit" formaction="/admin/tenants/{{$t.ID}}/sso/test" class="secondary">Test discovery</button>
+      <button type="submit" formaction="/admin/tenants/{{$t.ID}}/sso/disable" class="secondary">Disable</button>
+    {{end}}
+  </form>
+  <p class="muted" style="margin-top:0.5rem;font-size:0.85rem">
+    Callback URL to register with your IdP: <code>{{.PortalBase}}/admin/sso/callback</code>
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Email domains <span class="muted">({{len .Domains}})</span></h2>
+  <p class="muted" style="font-size:0.85rem">
+    Users typing an email at <code>@{{if .Domains}}{{(index .Domains 0).Domain}}{{else}}example.com{{end}}</code>
+    on the login page will get the "Sign in with SSO" button instead of password.
+  </p>
+  <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/sso/domains">
+    <label>Domain<input name="domain" placeholder="acme.com" required></label>
+    <button type="submit">Add</button>
+  </form>
+  {{if .Domains}}
+  <table style="margin-top:0.5rem">
+    <thead><tr><th>Domain</th><th>Added</th><th></th></tr></thead>
+    <tbody>
+      {{range .Domains}}
+      <tr>
+        <td><code>{{.Domain}}</code></td>
+        <td class="muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/sso/domains/{{.ID}}/remove" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Bookmarkable per-tenant SSO URL</h2>
+  <p>Share this URL with your team — it skips the email lookup and goes straight to your IdP:</p>
+  <p><code style="word-break:break-all">{{.PortalBase}}/admin/sso/{{$t.Slug}}/login</code></p>
+</section>
+{{end}}

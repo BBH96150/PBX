@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  Feature codes context. The Go dialplan handler binds these via
+  `bind_meta_app` so the A-leg can trigger them with DTMF mid-call:
+
+    *2  → attended ("warm") transfer — caller is prompted for an extension,
+          talks to them, then can hang up to complete the transfer
+    *3  → blind ("cold") transfer — caller enters extension and the call is
+          immediately handed off
+
+  The B-leg can also transfer via SIP REFER from a desk phone's hardware
+  transfer button; that path goes through Sofia natively and doesn't need
+  any extra wiring on our side.
+-->
+<include>
+  <context name="features">
+
+    <extension name="att_xfer">
+      <condition field="destination_number" expression="^att_xfer$">
+        <action application="answer"/>
+        <action application="read" data="3 5 'tone_stream://%(200,100,350,440)' transfer_target 5000 #"/>
+        <action application="att_xfer" data="${transfer_target}"/>
+      </condition>
+    </extension>
+
+    <extension name="blind_xfer">
+      <condition field="destination_number" expression="^blind_xfer$">
+        <action application="answer"/>
+        <action application="read" data="3 5 'tone_stream://%(200,100,350,440)' transfer_target 5000 #"/>
+        <action application="transfer" data="-bleg ${transfer_target} XML default"/>
+      </condition>
+    </extension>
+
+  </context>
+</include>

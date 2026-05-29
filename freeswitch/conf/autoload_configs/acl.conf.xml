@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!--
+  Named ACLs used by other modules (event_socket, sofia, etc.).
+  Tighten these in production.
+-->
+<configuration name="acl.conf" description="Network Lists">
+  <network-lists>
+    <list name="local-net" default="deny">
+      <!-- All RFC1918 + loopback + Docker bridge ranges so containers
+           on the same compose network can connect. -->
+      <node type="allow" cidr="127.0.0.0/8"/>
+      <node type="allow" cidr="10.0.0.0/8"/>
+      <node type="allow" cidr="172.16.0.0/12"/>
+      <node type="allow" cidr="192.168.0.0/16"/>
+    </list>
+    <list name="trusted-pstn" default="deny">
+      <!-- Future home for CallCentric / Telnyx / Bandwidth carrier IPs. -->
+    </list>
+  </network-lists>
+</configuration>

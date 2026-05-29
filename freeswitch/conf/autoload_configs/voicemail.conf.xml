@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!--
+  mod_voicemail configuration.
+
+  Profile "default" — used by all tenants for Phase 3 Wave 2. Per-tenant
+  profile customization (e.g. different prompts per language) can be added
+  by serving voicemail config dynamically via mod_xml_curl in a later wave.
+
+  Storage: $${storage_dir}/voicemail/<domain>/<user>/ on the FS host.
+  The control plane reads message metadata from FreeSWITCH's vm_db
+  (defaults to SQLite in $${db_dir}) OR from VM_RECORDED events via ESL.
+-->
+<configuration name="voicemail.conf" description="Voicemail">
+  <settings/>
+
+  <profiles>
+    <profile name="default">
+
+      <param name="storage-dir" value="$${storage_dir}/voicemail"/>
+      <param name="file-extension" value="wav"/>
+      <param name="record-rate" value="16000"/>
+
+      <!-- Behavior -->
+      <param name="play-date-announcement" value="first"/>
+      <param name="digit-timeout" value="5000"/>
+      <param name="max-login-attempts" value="3"/>
+      <param name="terminator-key" value="#"/>
+      <param name="record-silence-hits" value="2"/>
+      <param name="record-silence-threshold" value="200"/>
+      <param name="record-sample-rate" value="16000"/>
+
+      <!-- Message recording length -->
+      <param name="min-record-len" value="3"/>
+      <param name="max-record-len" value="300"/>
+
+      <!-- Greeting + prompt key sequences (FS defaults) -->
+      <param name="callback-dialplan" value="XML"/>
+      <param name="callback-context" value="default"/>
+
+      <email-list/>
+      <!-- Email delivery is wired by the control plane (Wave 2.5) via ESL,
+           not by mod_voicemail's built-in SMTP. -->
+    </profile>
+  </profiles>
+</configuration>

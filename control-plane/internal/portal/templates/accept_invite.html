@@ -1,0 +1,47 @@
+{{define "accept_invite"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Accept invite · SIP Platform</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+    main { width: 100%; max-width: 28rem; }
+    .pill { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 0.4rem; background: var(--pico-secondary-background); font-size: 0.78rem; }
+  </style>
+</head>
+<body>
+<main>
+  {{if .Bad}}
+    <h1>Invite unavailable</h1>
+    <article class="contrast">{{.Flash}}</article>
+    <p><a href="/admin/login">Sign in</a></p>
+  {{else}}
+    <h1>Join {{.Tenant.Name}}</h1>
+    <p class="muted">
+      You've been invited to <strong>{{.Tenant.Name}}</strong>
+      as <span class="pill">{{.Invite.Role}}</span>.
+      Email: <code>{{.Invite.Email}}</code>
+    </p>
+    {{if .Flash}}<article class="contrast">{{.Flash}}</article>{{end}}
+    <form method="post" action="/admin/accept-invite/{{.Token}}">
+      {{if .IsExisting}}
+        <p>An account already exists for this email — accepting just adds you to the new workspace.</p>
+        <button type="submit">Join {{.Tenant.Name}}</button>
+        <p class="muted" style="margin-top:0.5rem">You'll be signed in automatically.</p>
+      {{else}}
+        <label>Your name
+          <input type="text" name="display_name" autocomplete="name" required>
+        </label>
+        <label>Choose a password
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button type="submit">Create account & join</button>
+      {{end}}
+    </form>
+    <p style="margin-top:1rem"><a href="/admin/login">Sign in instead</a></p>
+  {{end}}
+</main>
+</body>
+</html>
+{{end}}

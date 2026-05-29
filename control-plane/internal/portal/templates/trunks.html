@@ -1,0 +1,168 @@
+{{define "trunks_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Phone trunks</h1>
+  <span class="muted">slug <code>{{$t.Slug}}</code></span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a>
+</nav>
+
+<section class="card" style="margin-top:1rem">
+  <h2>What's a trunk?</h2>
+  <p class="muted" style="font-size:0.9rem">
+    A SIP trunk connects this PBX to the public phone network (PSTN) through a carrier like CallCentric, Telnyx, or Bandwidth.
+    Once a trunk is registered, your extensions can call real phone numbers and receive calls on the DIDs you've purchased from that carrier.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Existing trunks <span class="muted">({{len .Accounts}})</span></h2>
+  {{if .Accounts}}
+  <table>
+    <thead><tr><th>Name</th><th>Carrier</th><th>SIP user</th><th>DID</th><th>Saved</th><th>Live registration</th><th></th></tr></thead>
+    <tbody>
+      {{range .Accounts}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td><span class="pill">{{.CarrierKind}}</span></td>
+        <td><code>{{.SIPUsername}}</code> @ <code>{{.CarrierProxyHost}}</code></td>
+        <td>{{if .MainDIDE164}}<code>{{.MainDIDE164}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          {{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}
+        </td>
+        <td
+          hx-get="/admin/tenants/{{$t.ID}}/trunks/{{.ID}}/status"
+          hx-trigger="load, every 2s"
+          hx-swap="innerHTML"
+          aria-live="polite"
+        >
+          <span class="pill pill-warn">loading…</span>
+        </td>
+        <td>
+          <details>
+            <summary>Test call</summary>
+            <form
+              hx-post="/admin/tenants/{{$t.ID}}/trunks/{{.ID}}/test-outbound"
+              hx-target="#test-result-{{.ID}}"
+              hx-swap="innerHTML"
+              style="margin-top:0.4rem"
+            >
+              <label style="font-size:0.85rem">Dial through this trunk
+                <input name="dest" placeholder="+14155551234 or your cell" required>
+              </label>
+              <button type="submit" style="padding:0.2rem 0.7rem">Place test call</button>
+            </form>
+            <div id="test-result-{{.ID}}" style="margin-top:0.5rem;min-height:1.4rem"></div>
+            <p class="muted" style="font-size:0.78rem;margin-top:0.3rem">
+              When you answer, speak into the phone — you'll hear yourself echoed back
+              with ~1 sec delay. That confirms two-way audio works. Hang up to end.
+            </p>
+          </details>
+          <details style="margin-top:0.4rem">
+            <summary>Edit</summary>
+            <form method="post" action="/admin/tenants/{{$t.ID}}/trunks/{{.ID}}" style="margin-top:0.5rem">
+              <label>Name<input name="name" value="{{.Name}}" required></label>
+              <label>SIP username<input name="sip_username" value="{{.SIPUsername}}" required></label>
+              <label>SIP password<input type="password" name="sip_password" placeholder="(leave blank to keep)"></label>
+              <label>Auth realm<input name="auth_realm" value="{{.AuthRealm}}" placeholder="(optional, defaults to proxy host)"></label>
+              <label>Proxy host override<input name="proxy_host_override" value="{{.ProxyHostOverride}}" placeholder="e.g. alpha.callcentric.com"></label>
+              <label>Proxy port override<input name="proxy_port_override" type="number" min="1" max="65535" value="{{if .ProxyPortOverride}}{{.ProxyPortOverride}}{{end}}" placeholder="5060"></label>
+              <label>Transport
+                <select name="transport_override">
+                  <option value="" {{if eq .TransportOverride ""}}selected{{end}}>(carrier default: {{.CarrierTransport}})</option>
+                  <option value="udp" {{if eq .TransportOverride "udp"}}selected{{end}}>UDP</option>
+                  <option value="tcp" {{if eq .TransportOverride "tcp"}}selected{{end}}>TCP</option>
+                  <option value="tls" {{if eq .TransportOverride "tls"}}selected{{end}}>TLS</option>
+                </select>
+              </label>
+              <label>Main DID (E.164)<input name="main_did_e164" value="{{.MainDIDE164}}" placeholder="+14155551234"></label>
+              <label><input type="checkbox" name="register" value="true" {{if .Register}}checked{{end}}> Register (typical for hosted carriers like CallCentric)</label>
+              <label><input type="checkbox" name="enabled" value="true" {{if .Enabled}}checked{{end}}> Enabled</label>
+              <button type="submit">Save</button>
+            </form>
+            {{$cnt := index $.DIDCountByAccount .ID}}
+            <form method="post" action="/admin/tenants/{{$t.ID}}/trunks/{{.ID}}/delete" style="margin-top:0.5rem"
+                  onsubmit="return confirm({{if gt $cnt 0}}'Delete this trunk AND its {{$cnt}} routed phone number(s)? Inbound calls to those numbers will fail until reassigned.'{{else}}'Delete this trunk?'{{end}})">
+              <button type="submit" class="secondary" style="padding:0.25rem 0.8rem">Delete trunk{{if gt $cnt 0}} (+ {{$cnt}} number{{if gt $cnt 1}}s{{end}}){{end}}</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted" style="font-size:0.82rem;margin-top:0.5rem">
+    The "Live registration" column polls FreeSWITCH every 2 seconds.
+    <strong>REGED</strong> = trunk is registered and ready to make/receive calls.
+    <strong>FAIL_WAIT</strong> = credentials or network are wrong; check carrier portal.
+    <strong>TRYING</strong> = mid-registration; should flip to REGED within a few seconds.
+  </p>
+  {{else}}
+  <p class="muted">No trunks configured yet — add one below.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a trunk</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/trunks">
+    <label>Carrier
+      <select name="carrier_kind" required>
+        {{range .Carriers}}
+        <option value="{{.Kind}}">{{.Name}} ({{.SIPProxyHost}})</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Trunk name (for your own reference)
+      <input name="name" placeholder="e.g. Main CallCentric line" required>
+    </label>
+    <label>SIP username (from carrier)
+      <input name="sip_username" placeholder="e.g. 1777xxxxxxx or 1777xxxxxxx*100 for CallCentric" required>
+    </label>
+    <details>
+      <summary class="muted" style="font-size:0.85rem">CallCentric format help</summary>
+      <ul style="font-size:0.85rem;margin-top:0.25rem">
+        <li><strong>Main account</strong>: 11 digits starting with <code>1777</code> (e.g. <code>17771234567</code>).</li>
+        <li><strong>Sub-account / extension</strong>: main + <code>*</code> + sub-number (e.g. <code>17771234567*100</code>). The asterisk is required.</li>
+        <li><strong>Not</strong> your DID or your CallCentric login email — those won't work.</li>
+        <li>Find the right value in the CallCentric portal under <em>My Account → Account Info</em>.</li>
+        <li>The <strong>SIP password</strong> is the one shown on the same page (separate from your web login).</li>
+      </ul>
+    </details>
+    <label>SIP password (from carrier)
+      <input type="password" name="sip_password" required>
+    </label>
+    <label>Main DID — the phone number the carrier routes to you (E.164 format)
+      <input name="main_did_e164" placeholder="+14155551234">
+      <small class="muted">For caller-ID on outbound calls. To route inbound calls to a specific extension, set that up on <a href="/admin/tenants/{{$t.ID}}/dids">Phone numbers</a> after creating the trunk.</small>
+    </label>
+    <details>
+      <summary>Advanced</summary>
+      <label>Auth realm
+        <input name="auth_realm" placeholder="(usually leave blank — defaults to proxy)">
+      </label>
+      <label>Proxy host override
+        <input name="proxy_host_override" placeholder="e.g. alpha.callcentric.com">
+        <small class="muted">If you get 403 Incorrect Authentication with correct credentials, CallCentric likely assigned your account to a specific cluster. Check CallCentric → My Account → Account Info for the exact "SIP server" or "Proxy" value.</small>
+      </label>
+      <label>Proxy port override
+        <input name="proxy_port_override" type="number" min="1" max="65535" placeholder="5060">
+      </label>
+      <label>Transport
+        <select name="transport_override">
+          <option value="">UDP (default — what most carriers want)</option>
+          <option value="udp">UDP</option>
+          <option value="tcp">TCP</option>
+          <option value="tls">TLS (SIPS, port typically 5061)</option>
+        </select>
+      </label>
+      <label><input type="checkbox" name="register" value="true" checked> Register with carrier (uncheck only for IP-auth-only trunks like SIPStation)</label>
+    </details>
+    <button type="submit">Save trunk</button>
+    <p class="muted" style="font-size:0.85rem;margin-top:0.5rem">
+      Saving rewrites the FreeSWITCH gateway file and triggers a sofia rescan — the new trunk will start registering within a few seconds.
+    </p>
+  </form>
+</section>
+{{end}}

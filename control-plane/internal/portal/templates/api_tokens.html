@@ -1,0 +1,55 @@
+{{define "api_tokens_content"}}
+<div class="row">
+  <h1 style="margin:0">API tokens</h1>
+</div>
+
+{{if .NewToken}}
+<article style="margin-top:1rem">
+  <header><strong>New token created — copy it now, it won't be shown again.</strong></header>
+  <pre style="user-select:all"><code>{{.NewToken}}</code></pre>
+</article>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Issue a token</h2>
+  <form class="inline" method="post" action="/admin/api-tokens">
+    <label>Name<input name="name" placeholder="laptop-2026" required></label>
+    <label>Tenant<select name="tenant_id">
+      <option value="">(super-admin, all tenants)</option>
+      {{range .Tenants}}<option value="{{.ID}}">{{.Name}} ({{.Slug}})</option>{{end}}
+    </select></label>
+    <label>Scope<select name="scope">
+      <option>read</option>
+      <option selected>write</option>
+      <option>admin</option>
+    </select></label>
+    <label>Expires<input name="expires_in" placeholder="720h (30d) — empty = never"></label>
+    <button type="submit">Issue</button>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Existing</h2>
+  {{if .Tokens}}
+  <table>
+    <thead><tr><th>Prefix</th><th>Name</th><th>Tenant</th><th>Scope</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+      {{range .Tokens}}
+      <tr>
+        <td><code>{{.TokenPrefix}}…</code></td>
+        <td>{{.Name}}</td>
+        <td class="muted">{{if .TenantID}}{{.TenantID}}{{else}}*{{end}}</td>
+        <td><span class="pill">{{.Scope}}</span></td>
+        <td class="muted">{{if .LastUsedAt}}{{.LastUsedAt.Format "2006-01-02 15:04"}}{{else}}never{{end}}</td>
+        <td>
+          <form method="post" action="/admin/api-tokens/{{.ID}}/revoke" onsubmit="return confirm('Revoke token?')" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Revoke</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No tokens.</p>{{end}}
+</section>
+{{end}}

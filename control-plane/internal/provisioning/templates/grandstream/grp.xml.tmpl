@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Grandstream GRP / GXP / GXV config for {{.MAC}} (tenant: {{.Tenant.Slug}}).
+  Generated {{.Now.Format "2006-01-02T15:04:05Z"}}.
+  Uses XML/P-value mode (firmware 1.0.5+); legacy P-value binary not generated here.
+
+  P-value reference: https://documentation.grandstream.com/  (look up the
+  P-numbers for the model family; the ones below cover Account 1 SIP basics
+  for the GRP26xx / GXP21xx families).
+-->
+<gs_provision version="1">
+  <mac>{{.MACPlain}}</mac>
+  <config version="1">
+
+  {{range .Lines}}
+    {{if eq .LineNumber 1}}
+    <!-- Account 1 -->
+    <P271>1</P271>                      <!-- Account 1 active -->
+    <P47>{{.SIPDomain}}</P47>           <!-- Primary SIP Server -->
+    <P48>{{$.SIP.Proxy}}:{{$.SIP.ProxyPort}}</P48>  <!-- Outbound Proxy -->
+    <P31>{{$.SIP.RegisterExp}}</P31>    <!-- Register Expiration (seconds) -->
+    <P3>{{.DisplayName}}</P3>           <!-- Display Name -->
+    <P35>{{.Username}}</P35>            <!-- SIP User ID -->
+    <P36>{{.Username}}</P36>            <!-- Authenticate ID -->
+    <P34>{{.Password}}</P34>            <!-- Authenticate Password -->
+    {{end}}
+    {{if eq .LineNumber 2}}
+    <!-- Account 2 -->
+    <P401>1</P401>
+    <P402>{{.SIPDomain}}</P402>
+    <P403>{{$.SIP.Proxy}}:{{$.SIP.ProxyPort}}</P403>
+    <P407>{{.DisplayName}}</P407>
+    <P404>{{.Username}}</P404>
+    <P405>{{.Username}}</P405>
+    <P406>{{.Password}}</P406>
+    {{end}}
+  {{end}}
+
+    <!-- Provisioning path so phone keeps polling us -->
+    <P237>https://{{.Provision.PublicHost}}</P237>   <!-- Config Server Path -->
+    <P212>3</P212>                                   <!-- Use HTTPS -->
+    <P145>1</P145>                                   <!-- Always check at boot -->
+
+    <!-- Codecs (preference order, populated by the renderer) -->
+    {{if ge (len $.SIP.Codecs) 1}}<P57>{{index $.SIP.Codecs 0}}</P57>{{end}}
+    {{if ge (len $.SIP.Codecs) 2}}<P58>{{index $.SIP.Codecs 1}}</P58>{{end}}
+    {{if ge (len $.SIP.Codecs) 3}}<P59>{{index $.SIP.Codecs 2}}</P59>{{end}}
+    {{if ge (len $.SIP.Codecs) 4}}<P60>{{index $.SIP.Codecs 3}}</P60>{{end}}
+
+    <!-- NTP -->
+    <P30>pool.ntp.org</P30>
+
+  </config>
+</gs_provision>

@@ -1,0 +1,39 @@
+# Dex test IdP — speaks OIDC + SAML for end-to-end SSO smoke tests.
+#
+# Static config: one preconfigured user and two clients (one for OIDC, one
+# placeholder for SAML — Dex doesn't act as a SAML *IdP*, only as a SAML SP,
+# so SAML smoke uses samlidp.io or python-samlsp test harness instead).
+# For now this gives us real OIDC roundtrip coverage which fills the 4.8 gap.
+
+issuer: http://dex:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+# Allow the control-plane to fetch the discovery doc from inside the docker network.
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: sip-acme
+    redirectURIs:
+      - http://localhost:8080/admin/sso/callback
+      - http://127.0.0.1:8080/admin/sso/callback
+    name: 'SIP Acme'
+    secret: acme-test-secret-do-not-use-in-prod
+
+enablePasswordDB: true
+staticPasswords:
+  # email: alice@acme.test  password: hunter2hunter
+  # bcrypt of "hunter2hunter": generated via `htpasswd -bnBC 10 "" hunter2hunter`
+  - email: "alice@acme.test"
+    hash: "$2y$10$dnFu2y/CWqRoYAa44WaUu.IIZkRGoMtKkj9Ej09vJgWHuO1uFGnnK"
+    username: "alice"
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+  - email: "bob@acme.test"
+    hash: "$2y$10$dnFu2y/CWqRoYAa44WaUu.IIZkRGoMtKkj9Ej09vJgWHuO1uFGnnK"
+    username: "bob"
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5467"

@@ -1,0 +1,103 @@
+{{define "extension_content"}}
+{{$t := .Tenant}}
+{{$e := .Extension}}
+<div class="row">
+  <h1 style="margin:0">Ext {{$e.Extension}} <span class="muted">— {{$e.DisplayName}}</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Identity</h2>
+  <table>
+    <tbody>
+      <tr><td>Extension number</td><td><code>{{$e.Extension}}</code></td></tr>
+      <tr><td>SIP username</td><td><code>{{$e.SIPUsername}}</code></td></tr>
+      <tr><td>Status</td><td><span class="pill pill-ok">{{$e.Status}}</span></td></tr>
+      <tr><td>Created</td><td class="muted">{{$e.CreatedAt.Format "2006-01-02 15:04"}}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>SIP credentials for a softphone or desk phone</h2>
+  <p class="muted" style="font-size:0.9rem">
+    Use these in any SIP client (Linphone, Bria, Zoiper, baresip, or a hardware phone) to register this extension.
+  </p>
+  <table>
+    <tbody>
+      <tr><td>Server / Proxy</td><td><code>{{.SIPServerHost}}</code></td></tr>
+      <tr><td>Port</td><td><code>{{.SIPServerPort}}</code></td></tr>
+      <tr><td>Transport</td><td><code>{{.SIPTransport}}</code></td></tr>
+      <tr><td>Domain / Realm</td><td><code>{{.SIPDomain}}</code></td></tr>
+      <tr><td>Username</td><td><code>{{$e.SIPUsername}}</code></td></tr>
+      <tr><td>Auth user</td><td><code>{{$e.SIPUsername}}</code></td></tr>
+      <tr>
+        <td>Password</td>
+        <td>
+          {{if .RevealPassword}}
+            <code id="sip-pw">{{.SIPPassword}}</code>
+            <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('sip-pw').innerText); this.textContent='Copied ✓'" style="margin-left:0.5rem;padding:0.15rem 0.6rem">Copy</button>
+          {{else}}
+            <form method="get" action="/admin/extensions/{{$e.ID}}" style="display:inline;margin:0">
+              <input type="hidden" name="reveal" value="1">
+              <button type="submit" style="padding:0.15rem 0.6rem">Show password</button>
+            </form>
+            <form method="post" action="/admin/extensions/{{$e.ID}}/rotate-password" style="display:inline;margin:0;margin-left:0.5rem">
+              <button type="submit" class="secondary" style="padding:0.15rem 0.6rem" onclick="return confirm('Rotate the SIP password? Any currently-registered phones will be kicked off and need to re-register with the new password.')">Rotate password</button>
+            </form>
+          {{end}}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <details style="margin-top:0.5rem">
+    <summary class="muted" style="font-size:0.88rem">Quick setup for Linphone</summary>
+    <ol style="font-size:0.88rem">
+      <li>Open Linphone → Settings → Account assistant → Use a SIP account</li>
+      <li>Username: <code>{{$e.SIPUsername}}</code>, Domain: <code>{{.SIPDomain}}</code></li>
+      <li>Display name: <code>{{$e.DisplayName}}</code></li>
+      <li>Proxy / Transport: <code>{{.SIPServerHost}}:{{.SIPServerPort}}</code> via <code>{{.SIPTransport}}</code></li>
+      <li>Password: click "Show password" above</li>
+      <li>Test by dialing <code>9999</code> — should hear your own echo.</li>
+    </ol>
+  </details>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Features</h2>
+  <form method="post" action="/admin/extensions/{{$e.ID}}/features" class="inline">
+    <label><input type="checkbox" name="voicemail_enabled" value="true" {{if $e.VoicemailEnabled}}checked{{end}}> Voicemail enabled</label>
+    <label><input type="checkbox" name="do_not_disturb"   value="true" {{if $e.DoNotDisturb}}checked{{end}}> Do Not Disturb</label>
+    <label><input type="checkbox" name="recording_enabled" value="true" {{if $e.RecordingEnabled}}checked{{end}}> Always record</label>
+    <label>CF immediate<input name="cf_immediate" value="{{$e.CFImmediate}}" placeholder="ext or +E.164"></label>
+    <label>CF busy<input name="cf_busy" value="{{$e.CFBusy}}" placeholder="ext or +E.164"></label>
+    <label>CF no-answer<input name="cf_no_answer" value="{{$e.CFNoAnswer}}" placeholder="ext or +E.164"></label>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
+{{if .VoicemailBox}}
+<section class="card" style="margin-top:1rem">
+  <h2>Voicemail box</h2>
+  <table>
+    <tbody>
+      <tr><td>PIN</td><td><code>****</code></td></tr>
+      <tr><td>Email</td><td>{{.VoicemailBox.Email}}</td></tr>
+      <tr><td>Max messages</td><td>{{.VoicemailBox.MaxMessages}}</td></tr>
+      <tr><td>Max msg duration</td><td>{{.VoicemailBox.MaxMsgDurationSec}}s</td></tr>
+    </tbody>
+  </table>
+</section>
+{{else if $e.VoicemailEnabled}}
+<section class="card" style="margin-top:1rem">
+  <h2>Create voicemail box</h2>
+  <form class="inline" method="post" action="/admin/extensions/{{$e.ID}}/voicemail">
+    <label>PIN (4-12 digits)<input name="pin" pattern="[0-9]{4,12}" required></label>
+    <label>Email (optional)<input name="email" type="email"></label>
+    <button type="submit">Create</button>
+  </form>
+</section>
+{{end}}
+{{end}}

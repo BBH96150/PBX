@@ -1,0 +1,17 @@
+{{define "twofa_recovery_codes_content"}}
+<div class="row">
+  <h1 style="margin:0">Save your recovery codes</h1>
+</div>
+
+<article class="contrast" style="margin-top:1rem">
+  ⚠ These codes are shown <strong>once</strong>. Save them in a password manager or print them. Each one works for a single sign-in if you lose your phone.
+</article>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Recovery codes</h2>
+  <pre id="codes" style="font-family:ui-monospace,SF Mono,monospace;font-size:1rem;line-height:1.6;padding:1rem;background:var(--pico-code-background-color)">{{range .Codes}}{{.}}
+{{end}}</pre>
+  <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('codes').innerText); this.textContent='Copied ✓'">Copy all</button>
+  <a href="/admin/security/2fa" role="button" class="secondary" style="margin-left:0.5rem">I've saved them — done</a>
+</section>
+{{end}}

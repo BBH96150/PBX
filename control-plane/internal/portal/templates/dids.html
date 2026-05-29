@@ -1,0 +1,103 @@
+{{define "dids_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Phone numbers</h1>
+  <span class="muted">inbound DID → extension routing</span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/trunks">Phone trunks</a>
+</nav>
+
+<section class="card" style="margin-top:1rem">
+  <h2>What this page does</h2>
+  <p class="muted" style="font-size:0.9rem">
+    A DID (Direct Inward Dialing) is a phone number assigned to you by your carrier. When someone calls one of your numbers, this page decides which extension rings.
+    Each number must belong to one of your <a href="/admin/tenants/{{$t.ID}}/trunks">trunks</a>.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Routed numbers <span class="muted">({{len .DIDs}})</span></h2>
+  {{if .DIDs}}
+  <table>
+    <thead><tr><th>Number</th><th>Routes to</th><th>State</th><th></th></tr></thead>
+    <tbody>
+      {{range .DIDs}}
+      <tr>
+        <td><code>{{.E164}}</code></td>
+        <td>
+          {{if eq .DestinationKind "extension"}}
+            extension {{index $.ExtLabel .DestinationID}}
+          {{else}}
+            <span class="pill">{{.DestinationKind}}</span> <code>{{.DestinationID}}</code>
+          {{end}}
+          {{if .CNAM}}<span class="muted" style="font-size:0.82rem">— CNAM: {{.CNAM}}</span>{{end}}
+        </td>
+        <td>
+          {{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}
+        </td>
+        <td>
+          <button type="button"
+            class="secondary" style="padding:0.2rem 0.6rem"
+            hx-post="/admin/tenants/{{$t.ID}}/dids/{{.ID}}/test-inbound"
+            hx-target="#did-test-{{.ID}}"
+            hx-swap="innerHTML">Simulate ring</button>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/dids/{{.ID}}/toggle" style="display:inline;margin:0;margin-left:0.25rem">
+            <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+          </form>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/dids/{{.ID}}/delete" style="display:inline;margin:0;margin-left:0.25rem" onsubmit="return confirm('Remove this number from routing? Inbound calls to it will fail until reassigned.')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+          <div id="did-test-{{.ID}}" style="margin-top:0.4rem;min-height:1.2rem"></div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No numbers configured yet. Add one below.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a phone number</h2>
+  {{if not .Accounts}}
+    <article class="contrast" style="font-size:0.9rem">
+      You need at least one trunk before you can route a number. <a href="/admin/tenants/{{$t.ID}}/trunks">Set up a trunk</a> first.
+    </article>
+  {{else if not .Extensions}}
+    <article class="contrast" style="font-size:0.9rem">
+      You need at least one extension before you can route a number to it. Go back to the tenant overview to create one.
+    </article>
+  {{else}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/dids">
+    <label>Phone number (E.164)
+      <input name="e164" placeholder="+14155551234" required pattern="\+[1-9][0-9]{6,14}">
+      <small class="muted">Must include the leading + and country code, e.g. <code>+17778718016</code>.</small>
+    </label>
+    <label>On which trunk does this number arrive?
+      <select name="carrier_account_id" required>
+        {{range .Accounts}}
+        <option value="{{.ID}}">{{.Name}} ({{.CarrierKind}} — {{.SIPUsername}})</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Route inbound calls to
+      <select name="extension_id" required>
+        {{range .Extensions}}
+        <option value="{{.ID}}">{{.Extension}} — {{.DisplayName}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>CNAM / display name override (optional)
+      <input name="cnam" placeholder="e.g. Main Line">
+      <small class="muted">If set, this string replaces the caller's CNAM on inbound calls. Useful for distinguishing which line rang.</small>
+    </label>
+    <button type="submit">Add number</button>
+  </form>
+  {{end}}
+</section>
+{{end}}

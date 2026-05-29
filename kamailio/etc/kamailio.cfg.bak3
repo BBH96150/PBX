@@ -1,0 +1,353 @@
+#!KAMAILIO
+#
+# Phase 1 Kamailio config — multi-tenant SIP edge in front of FreeSWITCH.
+#
+# Responsibilities:
+#   - REGISTER: digest-auth against Postgres subscriber view, store AOR (usrloc, in-memory for now)
+#   - INVITE from phone: authenticate, forward to FreeSWITCH (dispatcher set 1)
+#   - INVITE from FreeSWITCH: trust by source, look up callee in usrloc, t_relay
+#
+# Production deltas to add later:
+#   - TLS listener (cert path below; module loaded, listener commented)
+#   - usrloc db_mode=1 (or htable+Redis) for multi-instance Kamailio
+#   - dispatcher DB-backed for live add/remove of FS nodes
+#   - PIKE / topology hiding / fail2ban-style anti-fraud
+#   - NAT traversal (nathelper / rtpengine) when phones are behind NAT
+
+####### Defined Values #########
+
+#!define DBURL  "postgres://sip:sip_dev@postgres:5432/sipplatform"
+#!define WITH_AUTH
+#!define WITH_USRLOCDB    0     /* 0 = memory only (Phase 1) ; 1 = DB persistence */
+#!define FREESWITCH_DISPATCHER_SET 1
+#!define FREESWITCH_TRUSTED_HOST "freeswitch"   /* docker DNS name; resolved at startup */
+
+####### Global Parameters #########
+
+debug=2
+log_stderror=yes
+log_facility=LOG_LOCAL0
+log_prefix="{$mt $hdr(CSeq) $ci} "
+
+memdbg=5
+memlog=5
+
+children=4
+fork=yes
+
+/* Server identity */
+server_header="Server: SIP Platform"
+user_agent_header="User-Agent: SIP Platform"
+
+/* Listen on all interfaces inside the container */
+listen=udp:0.0.0.0:5060
+listen=tcp:0.0.0.0:5060
+
+/* TLS: enable in Phase 2+
+listen=tls:0.0.0.0:5061
+enable_tls=yes
+*/
+
+tcp_connection_lifetime=3605
+tcp_accept_no_cl=yes
+tcp_keepalive=yes
+
+auto_aliases=no
+alias="sip.local"
+
+####### Modules #########
+
+loadmodule "db_postgres.so"
+loadmodule "sl.so"
+loadmodule "tm.so"
+loadmodule "rr.so"
+loadmodule "pv.so"
+loadmodule "maxfwd.so"
+loadmodule "textops.so"
+loadmodule "textopsx.so"
+loadmodule "siputils.so"
+loadmodule "sanity.so"
+loadmodule "xlog.so"
+loadmodule "ctl.so"
+loadmodule "kex.so"
+loadmodule "corex.so"
+loadmodule "uri_db.so"
+# domain.so disabled — its `version` table-check dance (needs domain + domain_attrs
+# at specific versions) is overkill for our flat tenant model. We do tenant routing
+# via the X-SIP-Tenant-Domain header we stamp before forwarding to FreeSWITCH; the
+# registrar accepts REGISTER for any host on our listen-addrs / aliases anyway.
+# loadmodule "domain.so"
+loadmodule "usrloc.so"
+loadmodule "registrar.so"
+loadmodule "auth.so"
+loadmodule "auth_db.so"
+loadmodule "dispatcher.so"
+loadmodule "rtimer.so"
+loadmodule "htable.so"
+loadmodule "pike.so"
+loadmodule "jsonrpcs.so"
+
+####### Module Configuration #########
+
+# ----- db_postgres -----
+modparam("db_postgres", "con_param", "connect_timeout=5")
+
+# ----- usrloc (REGISTER storage) -----
+# Phase 1: in-memory. Phase 3+: move to db_mode=1 or htable+Redis for HA.
+modparam("usrloc", "db_url", DBURL)
+modparam("usrloc", "db_mode", WITH_USRLOCDB)
+modparam("usrloc", "use_domain", 1)            /* multi-tenant: AOR is user@domain */
+modparam("usrloc", "matching_mode", 0)
+modparam("usrloc", "timer_interval", 60)
+
+# ----- registrar -----
+modparam("registrar", "method_filtering", 1)
+modparam("registrar", "max_contacts", 5)        /* per-AOR cap (multi-device per user) */
+modparam("registrar", "max_expires", 3600)
+modparam("registrar", "min_expires", 60)
+modparam("registrar", "default_expires", 600)
+modparam("registrar", "received_avp", "$avp(rcv)")
+
+# ----- auth -----
+modparam("auth", "nonce_expire", 30)
+
+# ----- auth_db -----
+modparam("auth_db", "db_url", DBURL)
+modparam("auth_db", "calculate_ha1", 0)         /* use precomputed ha1 from schema */
+modparam("auth_db", "password_column", "password")
+modparam("auth_db", "user_column", "username")
+modparam("auth_db", "domain_column", "domain")
+modparam("auth_db", "use_domain", 1)
+modparam("auth_db", "load_credentials", "$avp(ext_id)=id")
+
+# domain module disabled — see loadmodule comment.
+# modparam("domain", "db_url", DBURL)
+# modparam("domain", "domain_table", "domain")
+
+# ----- uri_db (lookup callee existence in subscriber view) -----
+modparam("uri_db", "db_url", DBURL)
+modparam("uri_db", "use_uri_table", 0)
+
+# ----- dispatcher (FreeSWITCH pool) -----
+modparam("dispatcher", "list_file", "/etc/kamailio/dispatcher.list")
+modparam("dispatcher", "flags", 2)              /* 2 = use destination URI as-is */
+modparam("dispatcher", "ds_ping_interval", 10)
+modparam("dispatcher", "ds_probing_threshold", 3)
+modparam("dispatcher", "ds_probing_mode", 1)
+modparam("dispatcher", "ds_ping_method", "OPTIONS")
+
+# ----- pike (basic anti-flood) -----
+modparam("pike", "sampling_time_unit", 2)
+modparam("pike", "reqs_density_per_unit", 30)
+modparam("pike", "remove_latency", 4)
+
+# ----- rtimer + ds_list_exists check -----
+modparam("rtimer", "timer", "name=ds_check;interval=30;mode=1;")
+modparam("rtimer", "exec", "timer=ds_check;route=DS_CHECK")
+
+# ----- jsonrpcs / ctl (admin) -----
+modparam("jsonrpcs", "transport", 0)            /* HTTP transport disabled by default */
+modparam("ctl", "binrpc", "unix:/var/run/kamailio/kamailio_ctl")
+
+####### Routing Logic #########
+
+request_route {
+
+    # Basic SIP sanity ----------------------------------------------------
+    if (!mf_process_maxfwd_header("10")) {
+        sl_send_reply("483", "Too Many Hops");
+        exit;
+    }
+    if (!sanity_check("17895", "7")) {
+        xlog("L_WARN", "malformed SIP request from $si:$sp\n");
+        exit;
+    }
+
+    # Anti-flood ----------------------------------------------------------
+    if (src_ip != myself) {
+        if (!pike_check_req()) {
+            xlog("L_ALERT", "pike: blocking $rm from $si\n");
+            exit;
+        }
+    }
+
+    # Handle retransmissions ---------------------------------------------
+    # t_precheck_trans() landed after kamailio-ci 5.5.x; t_check_trans()
+    # alone is sufficient for the dedupe behavior we need.
+    t_check_trans();
+
+    # Loose-routing for in-dialog requests --------------------------------
+    if (has_totag()) {
+        route(WITHINDLG);
+        exit;
+    }
+
+    # CANCEL handling -----------------------------------------------------
+    if (is_method("CANCEL")) {
+        if (t_check_trans()) {
+            route(RELAY);
+        }
+        exit;
+    }
+
+    # Record-Route every dialog-creating request --------------------------
+    if (is_method("INVITE|SUBSCRIBE")) {
+        record_route();
+    }
+
+    # Branch by source: from FreeSWITCH vs from a phone -------------------
+    if (route(FROM_FREESWITCH)) {
+        route(TO_PHONE);
+        exit;
+    }
+
+    route(FROM_PHONE);
+}
+
+# Identify traffic coming from our FreeSWITCH pool by source IP/host.
+# ds_is_from_list returns 1 if $si matches any dispatcher destination.
+route[FROM_FREESWITCH] {
+    if (ds_is_from_list("$var(_ignored)", FREESWITCH_DISPATCHER_SET)) {
+        xlog("L_DBG", "request from FS source $si\n");
+        return 1;
+    }
+    return -1;
+}
+
+# --------------------------------------------------------------------------
+# FROM_PHONE: a SIP UAC (desk phone, softphone, WebRTC client)
+# --------------------------------------------------------------------------
+route[FROM_PHONE] {
+
+    # (domain module disabled — we don't gate on hostname; the registrar
+    # auths against subscriber by (sip_username, sip_domain) so unknown
+    # domains/users naturally fail auth.)
+
+    # Authenticate
+    route(AUTH);
+
+    # REGISTER ---------------------------------------------------------------
+    if (is_method("REGISTER")) {
+        if (!save("location")) {
+            sl_reply_error();
+        }
+        exit;
+    }
+
+    # INVITE / MESSAGE / etc → push to FreeSWITCH for application logic ------
+    if (is_method("INVITE|MESSAGE|REFER|NOTIFY|INFO|OPTIONS|SUBSCRIBE|PUBLISH")) {
+        # Stamp tenant info into a header so FS / control plane sees it.
+        # We assume $fd carries the tenant's SIP domain.
+        append_hf("X-SIP-Tenant-Domain: $fd\r\n");
+        append_hf("X-SIP-Extension-ID: $avp(ext_id)\r\n");
+        route(TO_FREESWITCH);
+        exit;
+    }
+
+    sl_send_reply("405", "Method Not Allowed");
+}
+
+# --------------------------------------------------------------------------
+# TO_FREESWITCH: rewrite R-URI and dispatch to a FS node
+# --------------------------------------------------------------------------
+route[TO_FREESWITCH] {
+    if (!ds_select_dst(FREESWITCH_DISPATCHER_SET, 4)) {
+        xlog("L_ERR", "no FreeSWITCH node available\n");
+        send_reply("503", "No media server");
+        exit;
+    }
+    t_on_failure("FS_FAILURE");
+    route(RELAY);
+}
+
+# --------------------------------------------------------------------------
+# TO_PHONE: lookup callee AOR and relay
+# --------------------------------------------------------------------------
+route[TO_PHONE] {
+    if (!lookup("location")) {
+        $var(rc) = $rc;
+        switch ($var(rc)) {
+            case -1:
+            case -3:
+                t_newtran();
+                t_reply("404", "Not Found");
+                exit;
+            case -2:
+                sl_send_reply("405", "Method Not Allowed");
+                exit;
+        }
+    }
+    route(RELAY);
+}
+
+# --------------------------------------------------------------------------
+# Authentication
+# --------------------------------------------------------------------------
+route[AUTH] {
+#!ifdef WITH_AUTH
+    if (is_method("REGISTER") || !has_totag()) {
+        if (!auth_check("$fd", "subscriber", "1")) {
+            auth_challenge("$fd", "0");
+            exit;
+        }
+        # consume_credentials() avoids forwarding auth header upstream
+        if (!is_method("REGISTER")) {
+            consume_credentials();
+        }
+    }
+#!endif
+    return;
+}
+
+# --------------------------------------------------------------------------
+# In-dialog (loose-routed) requests
+# --------------------------------------------------------------------------
+route[WITHINDLG] {
+    if (loose_route()) {
+        if (is_method("BYE")) {
+            setflag(1);    # accounting flag (reserved)
+        } else if (is_method("ACK")) {
+            t_check_trans();
+        }
+        route(RELAY);
+        exit;
+    }
+
+    if (is_method("ACK")) {
+        if (t_check_trans()) {
+            route(RELAY);
+            exit;
+        }
+        exit;
+    }
+    sl_send_reply("404", "Not here");
+}
+
+# --------------------------------------------------------------------------
+# Common relay
+# --------------------------------------------------------------------------
+route[RELAY] {
+    if (!t_relay()) {
+        sl_reply_error();
+    }
+    exit;
+}
+
+failure_route[FS_FAILURE] {
+    if (t_is_canceled()) { exit; }
+    if (t_check_status("5[0-9][0-9]")) {
+        xlog("L_WARN", "FS gave 5xx, trying next dispatcher dst\n");
+        if (ds_next_dst()) {
+            t_on_failure("FS_FAILURE");
+            route(RELAY);
+            exit;
+        }
+    }
+}
+
+# --------------------------------------------------------------------------
+# Periodic: re-check dispatcher state (no-op placeholder for future tasks)
+# --------------------------------------------------------------------------
+route[DS_CHECK] {
+    return;
+}

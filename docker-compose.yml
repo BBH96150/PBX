@@ -1,0 +1,178 @@
+# SIP platform — local dev stack.
+#
+# Networking note: this compose uses bridge networking for portability across
+# macOS/Linux. RTP audio will not flow cleanly through Docker Desktop on macOS;
+# for full end-to-end audio, use OrbStack on macOS or deploy to a Linux VM.
+# In production, run Kamailio + FreeSWITCH with host networking on Linux.
+
+name: sip-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sipplatform}
+      POSTGRES_USER: ${POSTGRES_USER:-sip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sip_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sip} -d ${POSTGRES_DB:-sipplatform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # WS port 5066 for Phase 5.0 webphone signaling.
+  kamailio:
+    image: kamailio/kamailio-ci:5.5.2-alpine
+    restart: unless-stopped
+    # Kamailio needs to be reachable by phones; in dev we expose ports,
+    # in production swap to network_mode: host on Linux.
+    ports:
+      - "${KAMAILIO_SIP_UDP_PORT:-5060}:5060/udp"
+      - "${KAMAILIO_SIP_TCP_PORT:-5060}:5060/tcp"
+      - "${KAMAILIO_SIP_TLS_PORT:-5061}:5061/tcp"
+      - "${KAMAILIO_WSS_PORT:-7443}:7443/tcp"
+      - "${KAMAILIO_WS_PORT:-5066}:5066/tcp"
+    volumes:
+      - ./kamailio/etc:/etc/kamailio:ro
+    environment:
+      DB_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  freeswitch:
+    image: safarov/freeswitch:latest
+    restart: unless-stopped
+    # FS internal SIP (between Kamailio and FS) stays on the docker network.
+    # External SIP profile (Phase 2) faces PSTN carriers — must be reachable.
+    # RTP needs a wide-ish port range exposed; keep small in dev.
+    ports:
+      - "${FS_EXTERNAL_SIP_PORT:-5070}:5070/udp"
+      - "${FS_RTP_START:-16384}-${FS_RTP_END:-16484}:${FS_RTP_START:-16384}-${FS_RTP_END:-16484}/udp"
+    volumes:
+      - ./freeswitch/conf:/etc/freeswitch:ro
+      # Phase 5.1: per-tenant carrier gateway XML written here by control-plane.
+      # external.xml includes external/dynamic/*.xml so these get picked up
+      # on sofia rescan.
+      - fs_dynamic_gateways:/etc/freeswitch/sip_profiles/external/dynamic
+      - freeswitch_recordings:/var/lib/freeswitch/recordings
+      - freeswitch_db:/var/lib/freeswitch/db
+      # Phase 5.1: share the log dir so the control-plane can surface
+      # registration failure reasons in the portal status fragment.
+      - fs_logs:/var/log/freeswitch
+    environment:
+      FS_RTP_START: ${FS_RTP_START:-16384}
+      FS_RTP_END: ${FS_RTP_END:-16484}
+      # Phase 5.1: public IP to advertise in outbound SDP. Production:
+      # set these to the server's static public IP in .env or your
+      # orchestrator. Dev: leave unset; vars-local.xml falls back to
+      # `stun:stun.freeswitch.org` for auto-discovery.
+      EXT_SIP_IP: ${EXT_SIP_IP:-}
+      EXT_RTP_IP: ${EXT_RTP_IP:-}
+    depends_on:
+      - kamailio
+
+  control-plane:
+    build:
+      context: ./control-plane
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # admin API (internal)
+      - "8443:8443"              # provisioning HTTPS (public in prod)
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      CONTROL_PLANE_ADMIN_ADDR: ":8080"
+      CONTROL_PLANE_PROVISIONING_ADDR: ":8443"
+      ESL_HOST: freeswitch
+      ESL_PORT: "8021"
+      ESL_PASSWORD: ${ESL_PASSWORD:-ClueCon}
+      PROVISIONING_PUBLIC_HOST: ${PROVISIONING_PUBLIC_HOST:-provision.example.local}
+      SIP_PUBLIC_HOST: ${SIP_PUBLIC_HOST:-sip.example.local}
+      SIP_PUBLIC_PORT: ${SIP_PUBLIC_PORT:-5060}
+      KAMAILIO_SIP_TARGET: kamailio:5060
+      BOOTSTRAP_API_TOKEN: ${BOOTSTRAP_API_TOKEN:-}
+      BOOTSTRAP_USER_EMAIL: ${BOOTSTRAP_USER_EMAIL:-}
+      BOOTSTRAP_USER_PASSWORD: ${BOOTSTRAP_USER_PASSWORD:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-PBX <pbx@example.com>}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      POLYCOM_ZTP_API_BASE: ${POLYCOM_ZTP_API_BASE:-}
+      POLYCOM_ZTP_API_TOKEN: ${POLYCOM_ZTP_API_TOKEN:-}
+      POLYCOM_ZTP_PROFILE_ID: ${POLYCOM_ZTP_PROFILE_ID:-}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      SAML_SP_CERT_PEM: ${SAML_SP_CERT_PEM:-}
+      SAML_SP_KEY_PEM: ${SAML_SP_KEY_PEM:-}
+      FS_DYNAMIC_GATEWAY_DIR: /fs-gateways
+    volumes:
+      # Phase 5.1: shared dir for per-tenant carrier gateway XML.
+      - fs_dynamic_gateways:/fs-gateways
+      # Phase 5.1: read-only access to FS logs so we can surface registration
+      # failure reasons in the trunks UI.
+      - fs_logs:/fs-logs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Schema migrations. Run on demand: `docker compose --profile tools run --rm migrate up`
+  # Phase 4.10: test OIDC IdP for SSO smoke tests. Loaded under the
+  # "sso-test" profile so it doesn't run for non-SSO dev.
+  dex:
+    image: dexidp/dex:v2.41.1
+    restart: unless-stopped
+    profiles: ["sso-test"]
+    ports:
+      - "127.0.0.1:5556:5556"
+    volumes:
+      - ./dex/dex-config.yaml:/etc/dex/config.yaml:ro
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+
+  migrate:
+    image: migrate/migrate:latest
+    profiles: ["tools"]
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint:
+      - migrate
+      - -path=/migrations
+      - -database=postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable
+    command: ["up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  freeswitch_recordings:
+  freeswitch_db:
+  fs_dynamic_gateways:
+  fs_logs:

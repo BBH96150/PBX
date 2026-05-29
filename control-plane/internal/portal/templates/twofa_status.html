@@ -1,0 +1,79 @@
+{{define "twofa_status_content"}}
+<div class="row">
+  <h1 style="margin:0">Two-factor authentication</h1>
+  <span class="muted">{{with .SessionUser}}{{.Email}}{{end}}</span>
+</div>
+<nav style="margin-top:0.25rem">
+  <a href="/admin/security/2fa">2FA</a> ·
+  <a href="/admin/security/sso">Linked SSO</a> ·
+  <a href="/admin/security/sessions">Active sessions</a>
+</nav>
+
+{{if not .SealerReady}}
+<article class="contrast" style="margin-top:1rem">
+  ⚠ 2FA is disabled in this deployment — <code>TOTP_ENCRYPTION_KEY</code> is not set on the control plane.
+  Ask the platform operator to configure it before enrolling.
+</article>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Authenticator app <span class="muted">({{len .Methods}} enrolled)</span></h2>
+  {{if .Methods}}
+    <table>
+      <thead><tr><th>Label</th><th>Confirmed</th><th>Last used</th></tr></thead>
+      <tbody>
+        {{range .Methods}}
+        <tr>
+          <td><code>{{.Label}}</code></td>
+          <td class="muted">{{if .ConfirmedAt}}{{.ConfirmedAt.Format "2006-01-02 15:04"}}{{end}}</td>
+          <td class="muted">{{if .LastUsedAt}}{{.LastUsedAt.Format "2006-01-02 15:04"}}{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:0.5rem">Recovery codes remaining: <strong>{{.RecoveryRemaining}}</strong></p>
+    <details>
+      <summary>Disable 2FA</summary>
+      <form method="post" action="/admin/security/2fa/disable" style="margin-top:0.5rem">
+        <p class="muted" style="font-size:0.85rem">Supply a current 6-digit code OR a recovery code to confirm.</p>
+        <label>6-digit code<input type="text" name="code" inputmode="numeric" maxlength="6"></label>
+        <label>Recovery code<input type="text" name="recovery" placeholder="abcd-1234"></label>
+        <button type="submit" class="secondary">Disable 2FA</button>
+      </form>
+    </details>
+  {{else if .SealerReady}}
+    <p class="muted">No authenticator enrolled. Add one to protect this account.</p>
+    <form method="post" action="/admin/security/2fa/setup">
+      <label>Device label<input type="text" name="label" placeholder="iPhone (Authy)" value="authenticator"></label>
+      <button type="submit">Set up authenticator</button>
+    </form>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Trusted devices <span class="muted">({{len .Devices}})</span></h2>
+  {{if .Devices}}
+  <table>
+    <thead><tr><th>Device</th><th>First trusted</th><th>Last seen</th><th>Expires</th><th>IP</th><th></th></tr></thead>
+    <tbody>
+      {{range .Devices}}
+      <tr>
+        <td>{{.Label}}</td>
+        <td class="muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td class="muted">{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+        <td class="muted">{{.ExpiresAt.Format "2006-01-02"}}</td>
+        <td class="muted"><code>{{.IPAddress}}</code></td>
+        <td>
+          <form method="post" action="/admin/security/devices/{{.ID}}/revoke" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Revoke</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No trusted devices. Check "Trust this browser" on the 2FA challenge to skip prompts for 30 days.</p>
+  {{end}}
+</section>
+{{end}}

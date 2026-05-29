@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!--
+  mod_callcenter (Phase 3 Wave 4).
+
+  This static file holds module-wide settings. Queues + agents + tiers come
+  in dynamically from the Go control plane via the `configuration` mod_xml_curl
+  binding (configuration.go handler). On admin-side changes, run:
+      fs_cli> reload mod_callcenter
+
+  Live ESL provisioning (no reload required) is Wave 4.5.
+
+  Storage: mod_callcenter persists agent state to its own DB. With no
+  odbc-dsn configured below, FS uses the bundled SQLite in $${db_dir}.
+  Migration to ODBC-backed Postgres in Wave 4.5+ for multi-instance.
+-->
+<configuration name="callcenter.conf" description="Call Center">
+  <settings>
+    <param name="odbc-dsn" value=""/>
+    <param name="dbname" value="callcenter"/>
+    <!-- Tick interval (ms): how often the queue worker checks for available agents. -->
+    <param name="truncate-tables-on-startup" value="false"/>
+    <param name="truncate-agents-on-startup" value="false"/>
+  </settings>
+
+  <queues/>
+  <agents/>
+  <tiers/>
+</configuration>

@@ -1,0 +1,211 @@
+{{define "tenant_content"}}
+{{$t := .Tenant}}
+{{$domains := .SIPDomains}}
+{{$primaryDomain := .PrimaryDomain}}
+
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}}</h1>
+  <span class="muted">slug <code>{{$t.Slug}}</code> · <code>{{$t.ID}}</code></span>
+</div>
+
+{{$extCount := len .Extensions}}
+{{$devCount := len .Devices}}
+{{$trunkCount := .TrunkCount}}
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">Overview</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/trunks">Phone trunks</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/dids">Phone numbers</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/cdrs">Recent calls (CDRs)</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/invites">Invites & teammates</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/sso">OIDC</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/saml">SAML</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/audit">Audit log</a>
+</nav>
+
+{{if or (eq $extCount 0) (eq $devCount 0) (eq $trunkCount 0)}}
+<section class="card" style="margin-top:1rem;background:#f5f8ff;border-color:#9ab">
+  <h2>Getting started</h2>
+  <ol style="margin:0;padding-left:1.2rem;font-size:0.93rem">
+    <li>{{if gt $trunkCount 0}}✓ {{else}}☐ {{end}}
+        <a href="/admin/tenants/{{$t.ID}}/trunks">Connect a phone-number provider (SIP trunk)</a>{{if gt $trunkCount 0}} <span class="muted">— {{$trunkCount}} configured</span>{{end}}</li>
+    <li>{{if gt $extCount 0}}✓ {{else}}☐ {{end}}
+        Create extensions for your team{{if gt $extCount 0}} <span class="muted">— {{$extCount}} created</span>{{end}}
+        {{if eq $extCount 0}}<br><span class="muted" style="font-size:0.85rem">Use the "Extensions" card below to add the first one.</span>{{end}}</li>
+    <li>{{if gt $devCount 0}}✓ {{else}}☐ {{end}}
+        Add a device or softphone{{if gt $devCount 0}} <span class="muted">— {{$devCount}} added</span>{{end}}
+        {{if and (eq $devCount 0) (gt $extCount 0)}}<br><span class="muted" style="font-size:0.85rem">Click any extension below to see SIP credentials you can paste into Linphone, Bria, Zoiper, or a hardware phone.</span>{{end}}</li>
+    <li>☐ Place a test call to <code>9999</code> (echo) once at least one device is registered.</li>
+  </ol>
+</section>
+{{end}}
+
+<div class="grid-2" style="margin-top:1rem">
+
+  <section class="card">
+    <h2>SIP domains <span class="muted">({{len $domains}})</span></h2>
+    {{if $domains}}<ul>{{range $domains}}<li><code>{{.Domain}}</code>{{if .IsPrimary}} <span class="pill pill-ok">primary</span>{{end}}</li>{{end}}</ul>{{end}}
+    <details><summary>Add domain</summary>
+      <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/sip-domains">
+        <label>Domain<input name="domain" placeholder="acme.sip.example.com" required></label>
+        <label><input type="checkbox" name="is_primary" value="true"> Primary</label>
+        <button type="submit">Add</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Extensions <span class="muted">({{len .Extensions}})</span></h2>
+    {{if .Extensions}}
+    <table>
+      <thead><tr><th>Ext</th><th>Display</th><th>Features</th></tr></thead>
+      <tbody>
+        {{range .Extensions}}
+        <tr>
+          <td><code>{{.Extension}}</code></td>
+          <td><a href="/admin/extensions/{{.ID}}">{{.DisplayName}}</a></td>
+          <td class="muted">
+            {{if .VoicemailEnabled}}<span class="pill">VM</span>{{end}}
+            {{if .RecordingEnabled}}<span class="pill">REC</span>{{end}}
+            {{if .DoNotDisturb}}<span class="pill pill-warn">DND</span>{{end}}
+            {{if .CFImmediate}}<span class="pill">CF→{{.CFImmediate}}</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    <details><summary>Add extension</summary>
+      <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/extensions">
+        <input type="hidden" name="sip_domain_id" value="{{if $primaryDomain}}{{$primaryDomain.ID}}{{end}}">
+        <label>Number<input name="extension" placeholder="103" required></label>
+        <label>Display<input name="display_name" placeholder="Carol"></label>
+        <button type="submit"{{if not $primaryDomain}} disabled{{end}}>Add</button>
+      </form>
+      {{if not $primaryDomain}}<small class="muted">Add a primary SIP domain first.</small>{{end}}
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Devices <span class="muted">({{len .Devices}})</span></h2>
+    {{if .Devices}}
+    <table>
+      <thead><tr><th>MAC</th><th>Vendor / Model</th><th>RPS</th></tr></thead>
+      <tbody>
+        {{range .Devices}}
+        <tr>
+          <td><code>{{.MAC}}</code></td>
+          <td>{{.Vendor}} {{.Model}}{{if .Label}} <span class="muted">— {{.Label}}</span>{{end}}</td>
+          <td>{{if .RPSSyncedAt}}<span class="pill pill-ok">synced</span>{{else if .RPSLastError}}<span class="pill pill-warn">err</span>{{else}}<span class="pill">pending</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    <details><summary>Add device</summary>
+      <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/devices">
+        <label>MAC<input name="mac" placeholder="00:15:65:aa:bb:cc" required></label>
+        <label>Vendor
+          <select name="vendor" required>
+            <option value="polycom">Polycom</option>
+            <option value="yealink">Yealink</option>
+            <option value="grandstream">Grandstream</option>
+            <option value="cisco">Cisco</option>
+            <option value="snom">Snom</option>
+            <option value="fanvil">Fanvil</option>
+            <option value="generic">Generic</option>
+          </select>
+        </label>
+        <label>Model<input name="model" placeholder="t46u" required></label>
+        <label>Label<input name="label" placeholder="Reception"></label>
+        <button type="submit">Add</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Ring groups <span class="muted">({{len .RingGroups}})</span></h2>
+    {{if .RingGroups}}
+    <table>
+      <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th></tr></thead>
+      <tbody>
+        {{range .RingGroups}}
+        <tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    <details><summary>Add ring group</summary>
+      <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/ring-groups">
+        <label>Ext<input name="extension" placeholder="200"></label>
+        <label>Name<input name="name" placeholder="Sales" required></label>
+        <label>Strategy
+          <select name="strategy">
+            <option value="simultaneous">simultaneous</option>
+            <option value="sequential">sequential</option>
+            <option value="round_robin">round-robin</option>
+            <option value="random">random</option>
+          </select>
+        </label>
+        <button type="submit">Add</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>IVRs <span class="muted">({{len .IVRs}})</span></h2>
+    {{if .IVRs}}
+    <table>
+      <thead><tr><th>Ext</th><th>Name</th></tr></thead>
+      <tbody>{{range .IVRs}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td></tr>{{end}}</tbody>
+    </table>
+    {{end}}
+    <details><summary>Add IVR</summary>
+      <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/ivrs">
+        <label>Ext<input name="extension" placeholder="300"></label>
+        <label>Name<input name="name" placeholder="Main Menu" required></label>
+        <button type="submit">Add</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Queues <span class="muted">({{len .Queues}})</span></h2>
+    {{if .Queues}}
+    <table>
+      <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th></tr></thead>
+      <tbody>{{range .Queues}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td></tr>{{end}}</tbody>
+    </table>
+    {{end}}
+    <details><summary>Add queue</summary>
+      <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/queues">
+        <label>Ext<input name="extension" placeholder="500"></label>
+        <label>Name<input name="name" placeholder="Support" required></label>
+        <label>Strategy
+          <select name="strategy">
+            <option value="longest-idle-agent">longest-idle-agent</option>
+            <option value="ring-all">ring-all</option>
+            <option value="round-robin">round-robin</option>
+            <option value="agent-with-fewest-calls">agent-with-fewest-calls</option>
+            <option value="random">random</option>
+            <option value="sequentially-by-agent-order">sequential</option>
+            <option value="top-down">top-down</option>
+          </select>
+        </label>
+        <button type="submit">Add</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>DIDs <span class="muted">({{len .DIDs}})</span></h2>
+    {{if .DIDs}}
+    <table>
+      <thead><tr><th>Number</th><th>Routes to</th></tr></thead>
+      <tbody>{{range .DIDs}}<tr><td><code>{{.E164}}</code></td><td class="muted">{{.DestinationKind}} {{.DestinationID}}</td></tr>{{end}}</tbody>
+    </table>
+    {{end}}
+    <p class="muted">Add via API (carrier_account + dest UUID required).</p>
+  </section>
+
+</div>
+{{end}}

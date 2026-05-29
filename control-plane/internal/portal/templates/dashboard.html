@@ -1,0 +1,34 @@
+{{define "dashboard_content"}}
+<div class="row">
+  <h1 style="margin:0">Tenants</h1>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Create a tenant</h2>
+  <form class="inline" method="post" action="/admin/tenants">
+    <label>Slug<input name="slug" placeholder="acme" required></label>
+    <label>Name<input name="name" placeholder="Acme Corp" required></label>
+    <button type="submit">Create</button>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Existing</h2>
+  {{if .Tenants}}
+  <table>
+    <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+      {{range .Tenants}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td><code>{{.Slug}}</code></td>
+        <td><span class="pill pill-ok">{{.Status}}</span></td>
+        <td class="muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td><a href="/admin/tenants/{{.ID}}">Open →</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No tenants yet.</p>{{end}}
+</section>
+{{end}}

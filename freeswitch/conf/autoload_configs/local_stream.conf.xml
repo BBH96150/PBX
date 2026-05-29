@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+  mod_local_stream sources for music-on-hold etc. The "moh" stream is what
+  Sofia and mod_callcenter reach for when they're told `local_stream://moh`.
+
+  Default rate of 8k matches the bundled FreeSWITCH music files
+  (/usr/share/freeswitch/sounds/music/8000/). Per-tenant custom MoH lands in
+  a later wave — at that point we'll either add per-tenant streams here or
+  switch to playing files directly via mod_xml_curl-served config.
+-->
+<configuration name="local_stream.conf" description="Local Stream">
+  <directory name="moh" path="$${sounds_dir}/music/8000">
+    <param name="rate" value="8000"/>
+    <param name="shuffle" value="true"/>
+    <param name="channels" value="1"/>
+    <param name="interval" value="20"/>
+    <param name="timer-name" value="soft"/>
+    <param name="chime-list" value=""/>
+    <param name="chime-freq" value="30"/>
+    <param name="chime-max" value="100"/>
+    <param name="chime-threshold" value="20"/>
+  </directory>
+</configuration>

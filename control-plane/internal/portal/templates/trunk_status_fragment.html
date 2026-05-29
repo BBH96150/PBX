@@ -1,0 +1,19 @@
+{{define "trunk_status_fragment"}}{{with .Status -}}
+{{if .Error}}
+  <span class="pill" title="{{.Error}}">esl ⚠</span>
+{{else if not .Found}}
+  <span class="pill pill-warn">loading…</span>
+{{else}}
+  {{- $cls := "pill" -}}
+  {{- if eq .State "REGED" -}}{{$cls = "pill pill-ok"}}{{end -}}
+  {{- if eq .State "FAIL_WAIT" -}}{{$cls = "pill pill-warn"}}{{end -}}
+  {{- if eq .State "TRYING" -}}{{$cls = "pill pill-warn"}}{{end -}}
+  <span class="{{$cls}}" title="Sofia state: {{.State}} / Status: {{.Status}}">{{.State}}</span>
+  {{if .LastSIPCode}}
+    <span class="muted" style="font-size:0.78rem;margin-left:0.35rem">→ {{.LastSIPCode}} {{.LastSIPMsg}}</span>
+  {{end}}
+  {{if .PingTime}}<span class="muted" style="font-size:0.78rem;margin-left:0.35rem">ping {{.PingTime}}ms</span>{{end}}
+  {{if and .Uptime (eq .State "REGED")}}<span class="muted" style="font-size:0.78rem;margin-left:0.35rem">up {{.Uptime}}</span>{{end}}
+  {{if or .CallsIn .CallsOut}}<span class="muted" style="font-size:0.78rem;margin-left:0.35rem">↓{{.CallsIn}}/↑{{.CallsOut}}</span>{{end}}
+{{end}}
+{{- end}}{{end}}

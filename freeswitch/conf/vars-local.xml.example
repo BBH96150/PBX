@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+  Per-deployment local vars for FreeSWITCH (gitignored when copied to
+  vars-local.xml). Fill in carrier credentials here; vars.xml includes
+  this file via X-PRE-PROCESS.
+
+  Copy to vars-local.xml and edit; do NOT commit the populated file.
+-->
+<include>
+  <!-- CallCentric SIP credentials.
+       Get these from https://my.callcentric.com → Settings → SIP. -->
+  <X-PRE-PROCESS cmd="set" data="cc_account_username=1777XXXXXXX"/>
+  <X-PRE-PROCESS cmd="set" data="cc_account_password=replace-me"/>
+  <X-PRE-PROCESS cmd="set" data="cc_realm=callcentric.com"/>
+  <X-PRE-PROCESS cmd="set" data="cc_proxy=callcentric.com"/>
+</include>

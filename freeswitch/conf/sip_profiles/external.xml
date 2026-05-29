@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<!--
+  External SIP profile — PSTN-facing.
+  Auth-calls=true (so spoofed INVITEs to our public port from random IPs
+  don't get a free ride). Real carrier traffic comes in via the registered
+  gateways under sip_profiles/external/, which are trusted by Sofia.
+  Context "public" — inbound PSTN routing happens there.
+-->
+<profile name="external">
+  <aliases/>
+
+  <gateways>
+    <!-- Static gateways (legacy, edited by hand). -->
+    <X-PRE-PROCESS cmd="include" data="external/*.xml"/>
+    <!-- Phase 5.1: per-tenant gateways materialized from carrier_accounts
+         by the control-plane. The dir is a shared docker volume. -->
+    <X-PRE-PROCESS cmd="include" data="external/dynamic/*.xml"/>
+  </gateways>
+
+  <domains/>
+
+  <settings>
+    <param name="user-agent-string" value="SIPPlatform/Phase2-PSTN"/>
+
+    <!-- Bind -->
+    <param name="sip-ip" value="$${local_ip_v4}"/>
+    <param name="rtp-ip" value="$${local_ip_v4}"/>
+    <param name="sip-port" value="$${external_sip_port}"/>
+
+    <!--
+      Phase 5.1 fix: NAT-aware SDP advertisement.
+
+      Without these, Sofia advertises the container's private IP as the
+      media address in outbound INVITE SDP. Carriers (CallCentric, etc.)
+      answer the call, see the unreachable RFC 1918 media address, and
+      BYE within a second — call never connects to audio.
+
+      The values come from vars-local.xml:
+        external_ext_sip_ip / external_ext_rtp_ip
+
+      In production set the EXT_SIP_IP + EXT_RTP_IP env vars on the FS
+      container to the server's static public IP. In dev they default to
+      `stun:stun.freeswitch.org` which discovers the IP at start-up
+      (works through Docker + home NAT but breaks if the ISP-assigned
+      address changes).
+    -->
+    <param name="ext-sip-ip" value="$${external_ext_sip_ip}"/>
+    <param name="ext-rtp-ip" value="$${external_ext_rtp_ip}"/>
+    <param name="aggressive-nat-detection" value="true"/>
+    <param name="apply-nat-acl" value="rfc1918"/>
+
+    <!-- Auth: challenge anything that didn't come through a known gateway -->
+    <param name="auth-calls" value="true"/>
+    <param name="apply-inbound-acl" value="any_v4"/>      <!-- carrier IPs vary -->
+
+    <!-- Codecs -->
+    <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${outbound_codec_prefs}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+    <param name="disable-transcoding" value="false"/>
+
+    <!-- Dialplan / context -->
+    <param name="dialplan" value="XML"/>
+    <param name="context" value="public"/>
+
+    <param name="dtmf-duration" value="2000"/>
+    <param name="rfc2833-pt" value="101"/>
+    <param name="rtp-timer-name" value="soft"/>
+    <param name="hold-music" value="silence_stream://-1"/>
+
+    <param name="rtp-autoflush-during-bridge" value="true"/>
+    <param name="disable-rtp-auto-adjust" value="false"/>
+    <param name="inbound-late-negotiation" value="true"/>
+
+    <param name="liberal-dtmf" value="true"/>
+    <param name="enable-100rel" value="true"/>
+    <param name="manage-presence" value="false"/>
+
+    <param name="log-auth-failures" value="true"/>
+  </settings>
+</profile>

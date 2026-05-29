@@ -1,0 +1,45 @@
+#!version:1.0.0.1
+#
+# Yealink config for {{.MAC}} (tenant: {{.Tenant.Slug}}).
+# Generated {{.Now.Format "2006-01-02T15:04:05Z"}}.
+# Tested with T-series (T31/T33/T43/T46/T48/T53/T54/T57) firmware 84/85+.
+
+# --- Provisioning -----------------------------------------------------------
+static.auto_provision.server.url   = https://{{.Provision.PublicHost}}
+static.auto_provision.dhcp_option.option60_value = yealink
+
+# --- Account 1 --------------------------------------------------------------
+{{range .Lines}}
+account.{{.LineNumber}}.enable                 = 1
+account.{{.LineNumber}}.label                  = {{.Label}}
+account.{{.LineNumber}}.display_name           = {{.DisplayName}}
+account.{{.LineNumber}}.auth_name              = {{.Username}}
+account.{{.LineNumber}}.user_name              = {{.Username}}
+account.{{.LineNumber}}.password               = {{.Password}}
+account.{{.LineNumber}}.sip_server.1.address   = {{.SIPDomain}}
+account.{{.LineNumber}}.sip_server.1.port      = {{$.SIP.ProxyPort}}
+account.{{.LineNumber}}.sip_server.1.expires   = {{$.SIP.RegisterExp}}
+account.{{.LineNumber}}.outbound_proxy_enable  = 1
+account.{{.LineNumber}}.outbound_proxy.1.address = {{$.SIP.Proxy}}
+account.{{.LineNumber}}.outbound_proxy.1.port    = {{$.SIP.ProxyPort}}
+account.{{.LineNumber}}.transport              = {{if eq $.SIP.Transport "tls"}}2{{else if eq $.SIP.Transport "tcp"}}1{{else}}0{{end}}
+account.{{.LineNumber}}.register_mac           = 0
+account.{{.LineNumber}}.subscribe_mwi          = {{if .VoicemailOn}}1{{else}}0{{end}}
+account.{{.LineNumber}}.cid_source             = 0
+{{end}}
+
+# --- Codecs -----------------------------------------------------------------
+account.1.codec.1.enable = 1
+account.1.codec.1.payload_type = OPUS
+account.1.codec.2.enable = 1
+account.1.codec.2.payload_type = G722
+account.1.codec.3.enable = 1
+account.1.codec.3.payload_type = PCMU
+account.1.codec.4.enable = 1
+account.1.codec.4.payload_type = PCMA
+
+# --- Misc -------------------------------------------------------------------
+features.dnd.enable                            = 1
+features.call_waiting.enable                   = 1
+features.auto_answer                           = 0
+phone_setting.ring_type                        = Ring1.wav

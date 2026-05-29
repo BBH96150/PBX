@@ -1,0 +1,31 @@
+{{define "twofa_setup_content"}}
+<div class="row">
+  <h1 style="margin:0">Set up authenticator</h1>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Step 1 · Scan the QR code</h2>
+  <p class="muted">Open Authy, Google Authenticator, 1Password, or any TOTP app and scan this code.</p>
+  <div style="text-align:center;margin:1rem 0">
+    <img src="{{.QRDataURL}}" alt="2FA QR" style="max-width:256px;height:auto">
+  </div>
+  <details>
+    <summary class="muted">Can't scan? Enter the secret manually.</summary>
+    <p style="margin-top:0.5rem;font-family:ui-monospace,SF Mono,monospace;word-break:break-all"><code>{{.Secret}}</code></p>
+  </details>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Step 2 · Enter the 6-digit code</h2>
+  <form method="post" action="/admin/security/2fa/confirm">
+    <input type="hidden" name="label" value="{{.Label}}">
+    <label>Current 6-digit code from your app
+      <input type="text" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autofocus required>
+    </label>
+    <button type="submit">Confirm and turn on 2FA</button>
+  </form>
+  <p class="muted" style="margin-top:0.5rem;font-size:0.85rem">
+    Don't navigate away — if you leave before confirming, the pending setup is discarded and you'll start over.
+  </p>
+</section>
+{{end}}

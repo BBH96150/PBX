@@ -1,0 +1,67 @@
+{{define "invites_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Invites</h1>
+  <span class="muted">slug <code>{{$t.Slug}}</code></span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a>
+</nav>
+
+{{if .NewLink}}
+<article class="ok" style="margin-top:1rem">
+  Invite created. If your invitee doesn't receive the email, share this link directly:<br>
+  <code style="word-break:break-all">{{.NewLink}}</code>
+</article>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Invite a teammate</h2>
+  <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/invites">
+    <label>Email<input type="email" name="email" placeholder="alex@example.com" required></label>
+    <label>Role
+      <select name="role">
+        <option value="user">user</option>
+        <option value="tenant_admin">tenant_admin</option>
+      </select>
+    </label>
+    <button type="submit">Send invite</button>
+  </form>
+  <p class="muted" style="margin-top:0.5rem;font-size:0.85rem">
+    Invites expire in 7 days. If SMTP isn't configured, the accept URL is shown above so you can hand-deliver it.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Outstanding invites <span class="muted">({{len .Invites}})</span></h2>
+  {{if .Invites}}
+  <table>
+    <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+    <tbody>
+      {{range .Invites}}
+      <tr>
+        <td><code>{{.Email}}</code></td>
+        <td><span class="pill">{{.Role}}</span></td>
+        <td>
+          {{if .AcceptedAt}}<span class="pill pill-ok">accepted</span>
+          {{else if .RevokedAt}}<span class="pill">revoked</span>
+          {{else}}<span class="pill pill-warn">pending</span>{{end}}
+        </td>
+        <td class="muted">{{.ExpiresAt.Format "2006-01-02 15:04"}}</td>
+        <td>
+          {{if not (or .AcceptedAt .RevokedAt)}}
+          <form method="post" action="/admin/invites/{{.ID}}/revoke" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Revoke</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No invites yet.</p>
+  {{end}}
+</section>
+{{end}}

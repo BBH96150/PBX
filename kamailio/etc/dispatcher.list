@@ -1,0 +1,8 @@
+# Kamailio dispatcher list — FreeSWITCH application pool.
+# Format: set_id  destination_uri  flags  priority  attrs
+#
+# Set 1 = FreeSWITCH application servers. Phase 1 has one node ("freeswitch"
+# resolved via docker DNS). Add more rows here (or migrate to DB-backed
+# dispatcher) when scaling out.
+
+1 sip:freeswitch:5080 0 10 weight=100;duid=fs1

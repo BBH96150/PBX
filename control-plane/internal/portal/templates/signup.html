@@ -1,0 +1,77 @@
+{{define "signup"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign up · SIP Platform</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+    main { width: 100%; max-width: 36rem; }
+    fieldset { border: 0; padding: 0; margin: 0 0 1rem 0; }
+    legend { font-weight: 600; margin-bottom: 0.5rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.75rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Create your account</h1>
+  <p class="muted">Spin up a new tenant in 30 seconds. 14-day trial, no card required.</p>
+  {{if .Flash}}<article class="contrast">{{.Flash}}</article>{{end}}
+
+  <form method="post" action="/admin/signup">
+
+    <fieldset>
+      <legend>Company</legend>
+      <label>Company name
+        <input name="company_name" required autofocus value="{{.Form.CompanyName}}">
+      </label>
+      <label>Tenant slug <small class="muted">(used in URLs &amp; SIP domains — leave blank to auto-generate)</small>
+        <input name="slug" placeholder="acme" value="{{.Form.Slug}}" pattern="[a-z0-9-]*">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Admin user</legend>
+      <div class="grid-2">
+        <label>Email
+          <input type="email" name="admin_email" required autocomplete="email" value="{{.Form.AdminEmail}}">
+        </label>
+        <label>Display name
+          <input name="admin_display_name" value="{{.Form.AdminDisplayName}}">
+        </label>
+      </div>
+      <label>Password
+        <input type="password" name="admin_password" required autocomplete="new-password" minlength="8">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Billing &amp; plan</legend>
+      <label>Plan
+        <select name="plan">
+          <option value="trial" {{if eq .Form.Plan "trial"}}selected{{end}}>Trial (14 days, free)</option>
+          <option value="starter" {{if eq .Form.Plan "starter"}}selected{{end}}>Starter</option>
+          <option value="pro" {{if eq .Form.Plan "pro"}}selected{{end}}>Pro</option>
+          <option value="enterprise" {{if eq .Form.Plan "enterprise"}}selected{{end}}>Enterprise</option>
+        </select>
+      </label>
+      <div class="grid-2">
+        <label>Billing email
+          <input type="email" name="billing_email" value="{{.Form.BillingEmail}}">
+        </label>
+        <label>Billing phone
+          <input type="tel" name="billing_phone" value="{{.Form.BillingPhone}}">
+        </label>
+      </div>
+    </fieldset>
+
+    <button type="submit">Create account</button>
+  </form>
+
+  <small class="muted" style="display:block;margin-top:1rem">
+    Already have an account? <a href="/admin/login">Sign in</a>.
+  </small>
+</main>
+</body>
+</html>
+{{end}}

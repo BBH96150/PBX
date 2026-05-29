@@ -1,0 +1,45 @@
+{{define "twofa_challenge"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Two-factor · SIP Platform</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+    main { width: 100%; max-width: 26rem; }
+    h1 { margin-bottom: 0.25rem; }
+    input[name=code] { font-family: ui-monospace, SF Mono, monospace; font-size: 1.25rem; letter-spacing: 0.35rem; text-align: center; }
+    details summary { cursor: pointer; font-size: 0.88rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Enter your 2FA code</h1>
+  <p class="muted">Open your authenticator app and enter the 6-digit code.</p>
+  {{if .Flash}}<article class="contrast">{{.Flash}}</article>{{end}}
+  <form method="post" action="/admin/2fa-challenge">
+    <label>6-digit code
+      <input type="text" name="code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autofocus>
+    </label>
+    <label>
+      <input type="checkbox" name="remember" value="true">
+      Trust this browser for 30 days
+    </label>
+    <button type="submit">Verify</button>
+  </form>
+
+  <details>
+    <summary>Lost your device? Use a recovery code.</summary>
+    <form method="post" action="/admin/2fa-challenge" style="margin-top:0.5rem">
+      <label>Recovery code
+        <input type="text" name="recovery" placeholder="abcd-1234" autocomplete="off">
+      </label>
+      <button type="submit" class="secondary">Use recovery code</button>
+    </form>
+  </details>
+
+  <p style="margin-top:1rem;font-size:0.88rem"><a href="/admin/login">Cancel and sign in as someone else</a></p>
+</main>
+</body>
+</html>
+{{end}}

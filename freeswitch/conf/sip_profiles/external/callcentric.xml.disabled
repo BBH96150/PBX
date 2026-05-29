@@ -1,0 +1,20 @@
+<include>
+  <!--
+    CallCentric gateway. Credentials in $${cc_*} vars from vars-local.xml.
+    One gateway per CallCentric account/DID. Add more files in this directory
+    for additional accounts or carriers (Telnyx, Bandwidth, etc.).
+  -->
+  <gateway name="callcentric">
+    <param name="username" value="$${cc_account_username}"/>
+    <param name="password" value="$${cc_account_password}"/>
+    <param name="realm" value="$${cc_realm}"/>
+    <param name="proxy" value="$${cc_proxy}"/>
+    <param name="from-domain" value="$${cc_realm}"/>
+    <param name="register" value="true"/>
+    <param name="register-transport" value="udp"/>
+    <param name="ping" value="30"/>
+    <param name="retry-seconds" value="30"/>
+    <param name="expire-seconds" value="600"/>
+    <param name="caller-id-in-from" value="false"/>
+  </gateway>
+</include>

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<configuration name="switch.conf" description="Core Configuration">
+  <settings>
+    <param name="colorize-console" value="true"/>
+    <param name="loglevel" value="info"/>
+    <param name="dialplan-timestamps" value="true"/>
+
+    <param name="rtp-start-port" value="$${rtp_start_port}"/>
+    <param name="rtp-end-port" value="$${rtp_end_port}"/>
+
+    <param name="max-sessions" value="1000"/>
+    <param name="sessions-per-second" value="30"/>
+
+    <param name="rtp-enable-zrtp" value="false"/>
+  </settings>
+</configuration>

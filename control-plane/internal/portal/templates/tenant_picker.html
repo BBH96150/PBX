@@ -1,0 +1,33 @@
+{{define "tenant_picker_content"}}
+<div class="row">
+  <h1 style="margin:0">Choose a workspace</h1>
+</div>
+
+<p class="muted">You belong to {{len .Memberships}} workspaces. Pick one to continue — you can switch any time from the top nav.</p>
+
+<section class="card">
+  <h2>Your workspaces</h2>
+  <table>
+    <thead><tr><th>Workspace</th><th>Role</th><th>Slug</th><th></th></tr></thead>
+    <tbody>
+      {{range .Memberships}}
+      <tr>
+        <td><strong>{{.TenantName}}</strong></td>
+        <td><span class="pill">{{.Role}}</span></td>
+        <td><code>{{.TenantSlug}}</code></td>
+        <td>
+          <form method="post" action="/admin/switch-tenant" style="margin:0">
+            <input type="hidden" name="tenant_id" value="{{.TenantID}}">
+            <button type="submit" style="padding:0.25rem 0.7rem">Open →</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <p class="muted" style="margin:0">Need a new workspace? <a href="/admin/signup">Create one</a>.</p>
+</section>
+{{end}}
