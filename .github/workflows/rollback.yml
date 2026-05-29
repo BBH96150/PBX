@@ -1,0 +1,94 @@
+name: Rollback Hetzner control-plane
+
+# Manual rollback: re-tag a previously-built image as :latest on the
+# Hetzner box and restart. The image must already exist in GHCR — we
+# don't rebuild here. To find a tag, look at the Packages page:
+#   https://github.com/users/BBH96150/packages/container/pbx%2Fcontrol-plane
+# or the SHA from the run that built it (CI tags every build sha-<7chars>).
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to roll back to (e.g. sha-1bbdcf2 or main). Default: previous main build.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  rollback:
+    name: Rollback to ${{ inputs.image_tag || 'previous main' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      # Use the same group as the deploy job so rollback waits behind
+      # an in-flight deploy (and vice versa).
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Resolve target tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED" ]; then
+            echo "Using user-supplied tag: $REQUESTED"
+            echo "tag=$REQUESTED" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Pick the previous main image — the second-most-recent sha-* tag
+          # in GHCR. We sort by created_at desc and skip the newest.
+          tags_json=$(gh api -H "Accept: application/vnd.github+json" \
+            /users/BBH96150/packages/container/pbx%2Fcontrol-plane/versions \
+            --paginate)
+          previous=$(printf '%s' "$tags_json" \
+            | jq -r '[.[] | .metadata.container.tags[]? | select(startswith("sha-"))] | .[1] // empty')
+          if [ -z "$previous" ]; then
+            echo "No previous sha-* tag found in GHCR; pass image_tag explicitly." >&2
+            exit 1
+          fi
+          echo "Resolved previous main build: $previous"
+          echo "tag=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull target tag, re-tag as :latest, restart
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "TAG=$TAG" bash -se <<'EOF'
+          set -euo pipefail
+          IMG=ghcr.io/bbh96150/pbx/control-plane
+          echo "Rolling back to $IMG:$TAG"
+          docker pull "$IMG:$TAG"
+          docker tag "$IMG:$TAG" "$IMG:latest"
+          cd /root/sip-platform
+          docker compose -p sip-platform up -d --no-build --force-recreate control-plane
+          EOF
+
+      - name: Smoke check
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 5 "http://$HOST:8080/healthz" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Portal healthy after $i attempt(s)."
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code; retrying in 3s"
+            sleep 3
+          done
+          echo "Portal never returned 200 after rollback." >&2
+          exit 1
