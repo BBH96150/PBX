@@ -11,10 +11,12 @@ linters:
     - unused
   settings:
     staticcheck:
-      # QF (quick-fix) checks are stylistic suggestions, not bugs.
-      # Disable the whole class so the build stays green when staticcheck
-      # ships new opinions like QF1001 (De Morgan's law).
-      checks: ["all", "-QF*"]
+      # Keep SA (correctness) and S (simplification). Drop:
+      #   QF*  — quick-fix suggestions (cosmetic, e.g. De Morgan)
+      #   ST*  — stylecheck (package comments, godoc preamble format,
+      #          IDP vs IdP initialism conventions). Useful for a public
+      #          library, mostly noise for an application.
+      checks: ["all", "-QF*", "-ST*"]
   exclusions:
     rules:
       # _test.go files: errcheck on assertions is just noise.
