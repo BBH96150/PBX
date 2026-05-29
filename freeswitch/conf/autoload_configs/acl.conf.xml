@@ -14,7 +14,24 @@
       <node type="allow" cidr="192.168.0.0/16"/>
     </list>
     <list name="trusted-pstn" default="deny">
-      <!-- Future home for CallCentric / Telnyx / Bandwidth carrier IPs. -->
+      <!-- Carrier source-IP whitelist. Any IP listed here is allowed to
+           hit the external profile AND is treated as a trusted gateway
+           (skips Sofia's auth-calls challenge for inbound INVITEs).
+           Carriers don't authenticate to us; we authenticate to them.
+           So inbound DID calls only work if the source IP is on this list. -->
+      <!-- CallCentric: 199.87.128.0/19 covers their published edge range. -->
+      <node type="allow" cidr="199.87.128.0/19"/>
+      <!-- Add Telnyx, Bandwidth, etc. ranges here when those carriers
+           come online. -->
+    </list>
+    <list name="any_v4" default="allow">
+      <!-- All IPv4. Used by sip_profiles/external.xml so carriers
+           (whose source IPs vary) can deliver inbound DID traffic.
+           auth-calls=true on the external profile is the real gate;
+           this just lets the packet reach Sofia in the first place.
+           Tighten by replacing with trusted-pstn once we have a fixed
+           IP list from CallCentric / Telnyx / etc. -->
+      <node type="allow" cidr="0.0.0.0/0"/>
     </list>
   </network-lists>
 </configuration>

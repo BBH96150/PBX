@@ -49,9 +49,11 @@
     <param name="aggressive-nat-detection" value="true"/>
     <param name="apply-nat-acl" value="rfc1918"/>
 
-    <!-- Auth: challenge anything that didn't come through a known gateway -->
+    <!-- Auth: only carriers in trusted-pstn (acl.conf.xml) get through.
+         apply-inbound-acl filters packets at the network layer AND tells
+         Sofia to skip the auth-calls challenge for matched sources. -->
     <param name="auth-calls" value="true"/>
-    <param name="apply-inbound-acl" value="any_v4"/>      <!-- carrier IPs vary -->
+    <param name="apply-inbound-acl" value="trusted-pstn"/>
 
     <!-- Codecs -->
     <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
