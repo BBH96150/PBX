@@ -1,0 +1,44 @@
+# Caddy reverse proxy for the SIP platform admin portal.
+#
+# Caddy auto-issues + auto-renews a Let's Encrypt cert for the host below.
+# Requires:
+#   - A pbx.tendpos.com → 5.78.207.2  (or whatever PORTAL_HOSTNAME points at)
+#   - Ports 80 + 443 reachable on the public IP (firewall: ufw allow 80,443)
+#
+# Internal upstream is the control-plane container at port 8080. We reach
+# it via the Docker compose-network DNS name `control-plane`. The
+# control-plane container should bind 127.0.0.1:8080 (loopback only) on
+# the host so the only way to reach it from outside is through Caddy.
+
+{$PORTAL_HOSTNAME:pbx.tendpos.com} {
+	# Tighten browser surface a bit.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Caddy adds Server: Caddy by default — keep that so admins know
+		# what's terminating; don't try to hide it.
+	}
+
+	# Compress on the wire — safe defaults.
+	encode zstd gzip
+
+	# Send everything to the control-plane container.
+	reverse_proxy control-plane:8080 {
+		# Forward the original Host so the app's URL-generation logic
+		# (PORTAL_BASE_URL) stays consistent with what the user typed.
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto https
+	}
+
+	# Tighter rate-limit on auth-ish paths would belong here once we add
+	# the caddy-ratelimit plugin; portal already does per-email + per-IP
+	# limits in Go (audit H1-ish), so leaving this out for now.
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -156,6 +156,27 @@ services:
       redis:
         condition: service_healthy
 
+  # Phase A.8: Caddy reverse proxy in front of control-plane.
+  # Auto-issues Let's Encrypt cert for PORTAL_HOSTNAME. Profile-gated so
+  # local dev (with no public DNS) doesn't try to issue a cert against
+  # localhost — `docker compose --profile prod up -d caddy` to start.
+  caddy:
+    image: caddy:2.7-alpine
+    restart: unless-stopped
+    profiles: ["prod"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"          # HTTP/3
+    environment:
+      PORTAL_HOSTNAME: ${PORTAL_HOSTNAME:-pbx.tendpos.com}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - control-plane
+
   # Audit H4 side-effect: control-plane runs as UID 65532 (non-root). The
   # named volume backing /fs-gateways defaults to root-owned, so the dynamic
   # gateway XML writer would EACCES. This one-shot chowns the volume to the
@@ -201,3 +222,5 @@ volumes:
   freeswitch_db:
   fs_dynamic_gateways:
   fs_logs:
+  caddy_data:
+  caddy_config:

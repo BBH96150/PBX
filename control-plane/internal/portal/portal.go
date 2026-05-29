@@ -106,6 +106,10 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		sipPublicPort:      opts.SIPPublicPort,
 		sipPublicTransport: opts.SIPPublicTransport,
 		sipDomainSuffix:    strings.TrimPrefix(opts.SIPDomainSuffix, "."),
+		// Auto-detect cookie Secure flag from PortalBaseURL — when we're
+		// served behind https://, set the flag so browsers refuse to
+		// send the session cookie over plaintext.
+		Secure: strings.HasPrefix(opts.PortalBaseURL, "https://"),
 	}
 	t := template.New("").Funcs(template.FuncMap{
 		"deref":       funcs["deref"],
