@@ -35,12 +35,35 @@ type SAMLKeypair struct {
 	Key  *rsa.PrivateKey
 }
 
-// NewSAMLKeypairFromEnv loads SAML_SP_CERT_PEM + SAML_SP_KEY_PEM. Returns
-// (nil, nil) when unset so the rest of the platform can come up without
-// SAML — callers should check and refuse SAML routes when nil.
+// NewSAMLKeypairFromEnv loads the platform's SAML SP keypair.
+//
+// Two sources, checked in order:
+//  1. SAML_SP_CERT_FILE + SAML_SP_KEY_FILE — paths to PEM files mounted
+//     into the container. Preferred for prod since multi-line PEMs don't
+//     fit cleanly in a flat .env file.
+//  2. SAML_SP_CERT_PEM + SAML_SP_KEY_PEM — inline PEM bytes (works fine
+//     in docker-compose.yml `environment:` blocks with YAML multi-line).
+//
+// Returns (nil, nil) when none are configured so the rest of the platform
+// can come up without SAML — callers should check and refuse SAML routes
+// when nil.
 func NewSAMLKeypairFromEnv() (*SAMLKeypair, error) {
 	certPEM := os.Getenv("SAML_SP_CERT_PEM")
 	keyPEM := os.Getenv("SAML_SP_KEY_PEM")
+	if certFile := os.Getenv("SAML_SP_CERT_FILE"); certFile != "" {
+		b, err := os.ReadFile(certFile)
+		if err != nil {
+			return nil, fmt.Errorf("SAML_SP_CERT_FILE: %w", err)
+		}
+		certPEM = string(b)
+	}
+	if keyFile := os.Getenv("SAML_SP_KEY_FILE"); keyFile != "" {
+		b, err := os.ReadFile(keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("SAML_SP_KEY_FILE: %w", err)
+		}
+		keyPEM = string(b)
+	}
 	if certPEM == "" || keyPEM == "" {
 		return nil, nil
 	}
