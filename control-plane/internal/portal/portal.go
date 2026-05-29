@@ -127,8 +127,6 @@ func (s *Server) Router() http.Handler {
 	r.Get("/login", s.handleLogin)
 	r.Post("/login", s.handleLoginPost)
 	r.Get("/logout", s.handleLogout)
-	r.Get("/signup", s.handleSignupGet)
-	r.Post("/signup", s.handleSignupPost)
 
 	// Phase 4.5: public password reset + invite acceptance.
 	r.Get("/forgot-password", s.handleForgotPasswordGet)
@@ -445,9 +443,10 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		}
 
 		issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
-			TenantID: tenantID,
-			Name:     "portal:" + u.Email + ":" + time.Now().UTC().Format("20060102T150405"),
-			Scope:    scope,
+			TenantID:  tenantID,
+			Name:      "portal:" + u.Email + ":" + time.Now().UTC().Format("20060102T150405"),
+			Scope:     scope,
+			ExpiresAt: portalSessionExpiry(),
 		})
 		if err != nil {
 			s.render(w, "login", map[string]any{"Flash": "Internal error creating session."})
@@ -490,6 +489,24 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// portalSessionTTL bounds how long a freshly-minted portal session token
+// is valid. The cookie itself purges from the browser after 7 days, but
+// the token row in api_tokens needs its own server-side expiry so a
+// captured cookie value can't be replayed indefinitely.
+//
+// 30 days is a deliberate compromise: long enough that day-to-day use
+// doesn't require frequent re-auth, short enough that a leaked cookie
+// has a bounded blast radius. Tenants that require tighter control can
+// still call the revoke endpoint at /admin/security/sessions.
+const portalSessionTTL = 30 * 24 * time.Hour
+
+// portalSessionExpiry returns a *time.Time pointing at now + portalSessionTTL,
+// suitable for the ExpiresAt field of store.CreateAPITokenInput.
+func portalSessionExpiry() *time.Time {
+	t := time.Now().Add(portalSessionTTL)
+	return &t
+}
+
 func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
@@ -502,84 +519,15 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, value string) {
 	})
 }
 
-// Phase 4.4 signup + tenant switcher --------------------------------------
-
-func (s *Server) handleSignupGet(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "signup", map[string]any{"Form": signupFormView{Plan: "trial"}})
-}
-
-func (s *Server) handleSignupPost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		s.render(w, "signup", map[string]any{"Flash": "bad form", "Form": signupFormView{Plan: "trial"}})
-		return
-	}
-	in := store.SignupInput{
-		CompanyName:      strings.TrimSpace(r.FormValue("company_name")),
-		Slug:             strings.TrimSpace(r.FormValue("slug")),
-		Plan:             strings.TrimSpace(r.FormValue("plan")),
-		BillingEmail:     strings.TrimSpace(r.FormValue("billing_email")),
-		BillingPhone:     strings.TrimSpace(r.FormValue("billing_phone")),
-		AdminEmail:       strings.TrimSpace(r.FormValue("admin_email")),
-		AdminPassword:    r.FormValue("admin_password"),
-		AdminDisplayName: strings.TrimSpace(r.FormValue("admin_display_name")),
-	}
-	tenant, user, err := s.store.CreateTenantWithAdmin(r.Context(), in)
-	if err != nil {
-		s.render(w, "signup", map[string]any{
-			"Flash": "Signup failed: " + err.Error(),
-			"Form": signupFormView{
-				CompanyName: in.CompanyName, Slug: in.Slug, Plan: in.Plan,
-				BillingEmail: in.BillingEmail, BillingPhone: in.BillingPhone,
-				AdminEmail: in.AdminEmail, AdminDisplayName: in.AdminDisplayName,
-			},
-		})
-		return
-	}
-	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
-		TenantID: &tenant.ID,
-		Name:     "portal:" + user.Email + ":" + time.Now().UTC().Format("20060102T150405"),
-		Scope:    "admin",
-	})
-	if err != nil {
-		http.Redirect(w, r, "/admin/login?flash=Account+created.+Please+sign+in.", http.StatusSeeOther)
-		return
-	}
-	s.setSessionCookie(w, issued.Plaintext)
-	ip, ua := audit.FromRequest(r)
-	s.audit.Log(r.Context(), audit.Event{
-		TenantID: &tenant.ID, ActorUserID: &user.ID, ActorEmail: user.Email,
-		ActorTokenID: &issued.ID,
-		Event:        audit.EventSignup,
-		TargetType:   "tenant", TargetID: &tenant.ID,
-		IPAddress: ip, UserAgent: ua,
-		Payload: map[string]any{
-			"plan": tenant.Plan, "slug": tenant.Slug, "company": in.CompanyName,
-		},
-	})
-
-	// Phase 4.9: fire verification email (no cooldown on signup — first send).
-	if err := s.dispatchVerificationEmail(r.Context(), user, 0); err != nil {
-		slog.Warn("signup verification dispatch failed", "user", user.Email, "err", err)
-	} else {
-		s.audit.Log(r.Context(), audit.Event{
-			ActorUserID: &user.ID, ActorEmail: user.Email,
-			Event: "auth.email.verification.sent", IPAddress: ip, UserAgent: ua,
-		})
-	}
-	http.Redirect(w, r,
-		"/admin/verify-email/sent?email="+user.Email,
-		http.StatusSeeOther)
-}
-
-type signupFormView struct {
-	CompanyName      string
-	Slug             string
-	Plan             string
-	BillingEmail     string
-	BillingPhone     string
-	AdminEmail       string
-	AdminDisplayName string
-}
+// Phase 4.4 tenant switcher ----------------------------------------------
+//
+// Self-service signup was removed (audit C3): /admin/signup was a public
+// route anyone could POST to in order to create a tenant + admin user +
+// admin-scope API token. Tenants are now created by the super-admin via
+// /admin/tenants, and tenant admins onboard users via the invite flow at
+// /admin/accept-invite/{token}. CreateTenantWithAdmin in the store layer
+// is retained because super-admins call it through the tenant-create
+// handler.
 
 func (s *Server) switchTenant(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {

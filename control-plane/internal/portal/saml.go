@@ -296,9 +296,10 @@ func (s *Server) handleSAMLCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
-		TenantID: &st.TenantID,
-		Name:     "portal:" + res.User.Email + ":saml:" + time.Now().UTC().Format("20060102T150405"),
-		Scope:    scope,
+		TenantID:  &st.TenantID,
+		Name:      "portal:" + res.User.Email + ":saml:" + time.Now().UTC().Format("20060102T150405"),
+		Scope:     scope,
+		ExpiresAt: portalSessionExpiry(),
 	})
 	if err != nil {
 		s.errPage(w, r, err)

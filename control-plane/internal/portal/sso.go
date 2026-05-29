@@ -258,9 +258,10 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
-		TenantID: tenantID,
-		Name:     "portal:" + res.User.Email + ":sso:" + time.Now().UTC().Format("20060102T150405"),
-		Scope:    scope,
+		TenantID:  tenantID,
+		Name:      "portal:" + res.User.Email + ":sso:" + time.Now().UTC().Format("20060102T150405"),
+		Scope:     scope,
+		ExpiresAt: portalSessionExpiry(),
 	})
 	if err != nil {
 		s.errPage(w, r, err)

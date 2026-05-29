@@ -178,9 +178,10 @@ func (s *Server) handleAcceptInvitePost(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
-		TenantID: tenantID,
-		Name:     "portal:" + user.Email + ":accept-invite",
-		Scope:    scope,
+		TenantID:  tenantID,
+		Name:      "portal:" + user.Email + ":accept-invite",
+		Scope:     scope,
+		ExpiresAt: portalSessionExpiry(),
 	})
 	if err != nil {
 		http.Redirect(w, r, "/admin/login?flash=Invite+accepted.+Please+sign+in.", http.StatusSeeOther)

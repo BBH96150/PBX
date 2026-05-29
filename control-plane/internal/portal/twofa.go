@@ -126,9 +126,10 @@ func (s *Server) mintSessionAndAudit(
 	auditEvt audit.Event,
 ) {
 	issued, err := s.store.CreateAPIToken(r.Context(), store.CreateAPITokenInput{
-		TenantID: tenantID,
-		Name:     "portal:" + user.Email + ":" + time.Now().UTC().Format("20060102T150405"),
-		Scope:    scope,
+		TenantID:  tenantID,
+		Name:      "portal:" + user.Email + ":" + time.Now().UTC().Format("20060102T150405"),
+		Scope:     scope,
+		ExpiresAt: portalSessionExpiry(),
 	})
 	if err != nil {
 		s.render(w, "login", map[string]any{"Flash": "Internal error creating session."})
