@@ -1,0 +1,169 @@
+name: Restart SIP services
+
+# Manual restart of FreeSWITCH and/or Kamailio. Use when you've shipped
+# a config change in the repo (sip_profiles, dialplan, modules.conf, etc.)
+# that requires a service restart to take effect.
+#
+# WARNING: restarting FreeSWITCH or Kamailio drops all in-flight calls.
+# Pick a quiet moment. The pre-flight step reports the active call count
+# so you know what you're killing.
+#
+# Optional sync_config: rsync freeswitch/conf/ and/or kamailio/etc/ from
+# this checkout to the server before restarting. Off by default because
+# server-side files may have prod-only edits (e.g. kamailio.cfg has the
+# production DB password hardcoded). Turn on only when you've audited
+# the diff.
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Which service(s) to restart'
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - freeswitch
+          - kamailio
+      sync_config:
+        description: 'Sync conf dirs from this checkout BEFORE restarting (destructive — overwrites server-side edits)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    name: Restart ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pre-flight — active call count
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          set -euo pipefail
+          if docker exec sip-platform-freeswitch-1 fs_cli -x "show channels count" 2>/dev/null | head -1; then
+            :
+          else
+            echo "(FS not reachable — can't read call count)"
+          fi
+          EOF
+
+      - name: Sync config dirs (optional)
+        if: inputs.sync_config
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          # Back up the server-side dirs first, in case prod edits get wiped.
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          set -euo pipefail
+          cd /root/sip-platform
+          ts=$(date -u +%Y%m%dT%H%M%SZ)
+          mkdir -p .config-backups
+          for d in freeswitch/conf kamailio/etc; do
+            [ -d "$d" ] && tar czf ".config-backups/$(echo "$d" | tr '/' '_')-${ts}.tgz" "$d"
+          done
+          ls -la .config-backups/ | tail -5
+          EOF
+          # Now push the new conf dir(s).
+          if [ "$SERVICE" = "both" ] || [ "$SERVICE" = "freeswitch" ]; then
+            rsync -avz --delete \
+              -e "ssh -o IdentitiesOnly=yes" \
+              freeswitch/conf/ \
+              "$USER@$HOST:/root/sip-platform/freeswitch/conf/"
+          fi
+          if [ "$SERVICE" = "both" ] || [ "$SERVICE" = "kamailio" ]; then
+            # NOTE: kamailio/etc/kamailio.cfg on the server has a prod-only
+            # DBURL line. Re-apply it after rsync.
+            rsync -avz --delete \
+              -e "ssh -o IdentitiesOnly=yes" \
+              kamailio/etc/ \
+              "$USER@$HOST:/root/sip-platform/kamailio/etc/"
+            ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          set -euo pipefail
+          # Re-apply the prod Postgres password to kamailio.cfg.
+          # POSTGRES_PASSWORD lives in /root/sip-platform/.env which we
+          # source explicitly.
+          set -a; . /root/sip-platform/.env; set +a
+          sed -i "s|postgres://sip:sip_dev@|postgres://sip:${POSTGRES_PASSWORD}@|g" \
+            /root/sip-platform/kamailio/etc/kamailio.cfg
+          echo "kamailio.cfg DBURL line after re-patch:"
+          grep -n DBURL /root/sip-platform/kamailio/etc/kamailio.cfg | head -3
+          EOF
+          fi
+
+      - name: Restart
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "SERVICE=$SERVICE" bash -se <<'EOF'
+          set -euo pipefail
+          cd /root/sip-platform
+          case "$SERVICE" in
+            freeswitch) docker compose -p sip-platform restart freeswitch ;;
+            kamailio)   docker compose -p sip-platform restart kamailio ;;
+            both)       docker compose -p sip-platform restart freeswitch kamailio ;;
+          esac
+          EOF
+
+      - name: Post-restart health
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          # FS readiness: sofia profile external becomes RUNNING within
+          # a few seconds. Kamailio readiness: process listening on 5060.
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "SERVICE=$SERVICE" bash -se <<'EOF'
+          set -euo pipefail
+          ok=0
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            healthy=1
+            if [ "$SERVICE" = "both" ] || [ "$SERVICE" = "freeswitch" ]; then
+              if ! docker exec sip-platform-freeswitch-1 fs_cli -x "sofia status" 2>/dev/null \
+                   | grep -q "RUNNING"; then
+                healthy=0
+              fi
+            fi
+            if [ "$SERVICE" = "both" ] || [ "$SERVICE" = "kamailio" ]; then
+              if ! docker exec sip-platform-kamailio-1 \
+                   sh -c 'kill -0 $(pgrep -f "kamailio" | head -1)' 2>/dev/null; then
+                healthy=0
+              fi
+            fi
+            if [ "$healthy" = "1" ]; then
+              ok=1; break
+            fi
+            echo "attempt $i: not healthy yet, sleeping 2s"
+            sleep 2
+          done
+          if [ "$ok" = "0" ]; then
+            echo "Services did not become healthy in time." >&2
+            docker compose -p sip-platform ps
+            exit 1
+          fi
+          echo "OK."
+          docker compose -p sip-platform ps freeswitch kamailio
+          EOF
