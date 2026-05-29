@@ -283,11 +283,30 @@ func (h *Handler) handleOutboundPSTN(w http.ResponseWriter, r *http.Request, des
 }
 
 // handleInboundPSTN serves the dialplan for calls arriving on the external
-// profile from a carrier gateway. destNum is the DID's user-part.
+// profile from a carrier gateway. destNum is the URI user-part FreeSWITCH
+// resolved as the destination, which is often the dialed DID — but for
+// carriers like CallCentric that route inbound to our gateway's Contact
+// URI ("gw+<gateway>@<our-ip>"), Sofia sets destination_number to the
+// gateway login (e.g. 17778718016150) and the real DID is in the To:
+// header. We try destNum first, then fall back to variable_sip_to_user.
 func (h *Handler) handleInboundPSTN(w http.ResponseWriter, r *http.Request, destNum string) {
 	normalized, err := e164.Normalize(destNum, "US")
 	if err != nil {
-		slog.Info("inbound DID not normalizable", "dest", destNum, "err", err)
+		// Fallback: the destination_number wasn't a valid E.164. Many SIP
+		// trunks (CallCentric, some Bandwidth setups, etc.) put the dialed
+		// DID in the To: URI user-part instead of the Request-URI. Try that.
+		if toUser := r.FormValue("variable_sip_to_user"); toUser != "" && toUser != destNum {
+			if n, terr := e164.Normalize(toUser, "US"); terr == nil {
+				slog.Info("inbound DID via To: header fallback",
+					"dest_orig", destNum, "to_user", toUser, "normalized", n)
+				normalized = n
+				err = nil
+			}
+		}
+	}
+	if err != nil {
+		slog.Info("inbound DID not normalizable",
+			"dest", destNum, "to_user", r.FormValue("variable_sip_to_user"), "err", err)
 		writeHangup(w, "public", "UNALLOCATED_NUMBER")
 		return
 	}
