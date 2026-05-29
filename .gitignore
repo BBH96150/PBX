@@ -42,3 +42,8 @@ freeswitch/conf/vars-local.xml
 # Kamailio runtime
 kamailio/var/
 kamailio/log/
+
+# Prod-only compose override and secrets dir (PEMs, etc).
+docker-compose.override.yml
+secrets/
+!secrets/README.md

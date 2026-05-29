@@ -129,6 +129,11 @@ services:
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
       SAML_SP_CERT_PEM: ${SAML_SP_CERT_PEM:-}
       SAML_SP_KEY_PEM: ${SAML_SP_KEY_PEM:-}
+      # Prod alternative: SAML_SP_CERT_FILE / SAML_SP_KEY_FILE point at
+      # mounted PEM files. Easier than stuffing multi-line PEMs into .env.
+      # See docker-compose.override.yml.example for the prod mount pattern.
+      SAML_SP_CERT_FILE: ${SAML_SP_CERT_FILE:-}
+      SAML_SP_KEY_FILE: ${SAML_SP_KEY_FILE:-}
       FS_DYNAMIC_GATEWAY_DIR: /fs-gateways
     volumes:
       # Phase 5.1: shared dir for per-tenant carrier gateway XML.
@@ -137,10 +142,23 @@ services:
       # failure reasons in the trunks UI.
       - fs_logs:/fs-logs:ro
     depends_on:
+      fs-gateways-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # Audit H4 side-effect: control-plane runs as UID 65532 (non-root). The
+  # named volume backing /fs-gateways defaults to root-owned, so the dynamic
+  # gateway XML writer would EACCES. This one-shot chowns the volume to the
+  # control-plane UID before control-plane starts.
+  fs-gateways-init:
+    image: alpine:3.20
+    restart: "no"
+    command: chown -R 65532:65532 /v
+    volumes:
+      - fs_dynamic_gateways:/v
 
   # Schema migrations. Run on demand: `docker compose --profile tools run --rm migrate up`
   # Phase 4.10: test OIDC IdP for SSO smoke tests. Loaded under the

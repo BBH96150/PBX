@@ -1,0 +1,28 @@
+# Production override — copy to docker-compose.override.yml and tweak.
+#
+# Docker Compose merges this file on top of docker-compose.yml when both
+# are present in the project dir. It's how we keep prod-only customizations
+# (GHCR image refs, file mounts for secrets, public port bindings) out of
+# the canonical compose without ending up with brittle conditional volumes.
+#
+# The Hetzner prod box (/root/sip-platform/) uses a hand-edited variant of
+# this — kept here so a fresh deploy elsewhere has a known good starting
+# point.
+
+services:
+  control-plane:
+    # Prod pulls the image from GHCR instead of building from source.
+    image: ghcr.io/bbh96150/pbx/control-plane:latest
+    ports:
+      # Expose publicly. Caddy (when added) will move this to localhost-only.
+      - "0.0.0.0:8080:8080"
+    environment:
+      # File paths take precedence over inline PEM env vars. The files are
+      # mounted below; generate them once with `go run ./control-plane/cmd/gen-saml-keys`.
+      SAML_SP_CERT_FILE: /etc/control-plane/saml/cert.pem
+      SAML_SP_KEY_FILE:  /etc/control-plane/saml/key.pem
+    volumes:
+      # The host file must be owned by UID 65532 (the control-plane user).
+      # See ./secrets/README for the chown step.
+      - ./secrets/saml-cert.pem:/etc/control-plane/saml/cert.pem:ro
+      - ./secrets/saml-key.pem:/etc/control-plane/saml/key.pem:ro
