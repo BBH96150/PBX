@@ -2,7 +2,6 @@ package portal
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -103,6 +102,3 @@ func stripPort(hostport string) string {
 	return hostport
 }
 
-// errNoExtension is returned when the user hasn't been assigned an extension
-// yet. The template handles this gracefully.
-var errNoExtension = errors.New("no extension owned by this user")

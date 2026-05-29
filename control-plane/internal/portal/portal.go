@@ -148,6 +148,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/sso/callback", s.handleSSOCallback)
 
 	// Phase 4.10: SAML public entry points.
+	r.Post("/login/saml", s.handleSAMLLoginByEmail)
 	r.Get("/sso/saml/metadata", s.samlMetadata)
 	r.Get("/sso/saml/{tenantSlug}/login", s.handleSAMLLoginByTenant)
 	r.Post("/sso/saml/callback", s.handleSAMLCallback)

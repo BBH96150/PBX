@@ -94,7 +94,7 @@ func (s *Server) trunkTestOutbound(w http.ResponseWriter, r *http.Request) {
 	}
 	out = strings.TrimSpace(out)
 	ok2 := strings.HasPrefix(out, "+OK")
-	msg := out
+	var msg string
 	callUUID := ""
 	switch {
 	case ok2:
@@ -190,7 +190,7 @@ func (s *Server) didTestInbound(w http.ResponseWriter, r *http.Request) {
 	}
 	out = strings.TrimSpace(out)
 	ok2 := strings.HasPrefix(out, "+OK")
-	msg := out
+	var msg string
 	callUUID := ""
 	switch {
 	case ok2:

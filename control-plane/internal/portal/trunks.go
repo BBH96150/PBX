@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -205,10 +206,12 @@ func (s *Server) trunkStatusFragment(w http.ResponseWriter, r *http.Request) {
 		st = s.gwSyncer.GatewayStatus(ctx, acct.FSGatewayName)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	s.tmpls.ExecuteTemplate(w, "trunk_status_fragment", map[string]any{
+	if err := s.tmpls.ExecuteTemplate(w, "trunk_status_fragment", map[string]any{
 		"Status":  st,
 		"Account": acct,
-	})
+	}); err != nil {
+		slog.Error("trunk status fragment render", "err", err)
+	}
 }
 
 func (s *Server) trunkDelete(w http.ResponseWriter, r *http.Request) {

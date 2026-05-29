@@ -9,7 +9,19 @@ linters:
     - staticcheck
     - ineffassign
     - unused
+  settings:
+    staticcheck:
+      # QF (quick-fix) checks are stylistic suggestions, not bugs.
+      # Disable the whole class so the build stays green when staticcheck
+      # ships new opinions like QF1001 (De Morgan's law).
+      checks: ["all", "-QF*"]
   exclusions:
     rules:
+      # _test.go files: errcheck on assertions is just noise.
       - path: _test\.go
+        linters: [errcheck]
+      # Unchecked deferred Close() on fs/network/smtp handles is idiomatic
+      # Go — the close happens during stack unwind and any error there
+      # isn't actionable.
+      - source: 'defer .*\.Close\(\)'
         linters: [errcheck]
