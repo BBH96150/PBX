@@ -126,3 +126,59 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Hetzner
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      # Serialize deploys — only one Hetzner deploy at a time. Newer
+      # main pushes wait, no cancellation (we want every shipped commit
+      # to actually land on the box).
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull image, run migrations, restart control-plane
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          set -euo pipefail
+          cd /root/sip-platform
+          echo "::group::pull"
+          docker compose -p sip-platform pull control-plane
+          echo "::endgroup::"
+          echo "::group::migrate"
+          docker compose -p sip-platform --profile tools run --rm migrate up
+          echo "::endgroup::"
+          echo "::group::restart"
+          docker compose -p sip-platform up -d --no-build control-plane
+          echo "::endgroup::"
+          # Trim old image layers; keep the last 3 of our image.
+          docker image prune -f --filter "label=org.opencontainers.image.source=https://github.com/BBH96150/PBX" >/dev/null || true
+          EOF
+
+      - name: Smoke check
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 5 "http://$HOST:8080/healthz" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Portal healthy after $i attempt(s)."
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code; retrying in 3s"
+            sleep 3
+          done
+          echo "Portal never returned 200 after restart." >&2
+          exit 1
