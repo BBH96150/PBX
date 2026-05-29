@@ -28,7 +28,9 @@ jobs:
         run: go vet ./...
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # v2.4.0+ is built with Go 1.25 toolchain — required since our
+          # go.mod targets 1.25. "latest" tracked a 1.24-built release.
+          version: v2.4.0
           working-directory: control-plane
           args: --timeout=5m
 
