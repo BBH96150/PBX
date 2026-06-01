@@ -36,8 +36,10 @@ jobs:
           CLEAN: ${{ github.event.inputs.clean }}
         run: |
           ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" <<'EOF'
-          set -uo pipefail
+          set -u
           CLEAN="${1:-no}"
+          echo "===== containers (id -> name) ====="
+          docker ps -a --format '{{.ID}}  {{.Names}}  {{.Image}}  ({{.Status}})' 2>/dev/null || true
           echo "===== df / ====="
           df -h /
           echo "===== top /var/* ====="
@@ -71,4 +73,6 @@ jobs:
             echo "===== df / after cleanup ====="
             df -h /
           fi
+          echo "===== DONE ====="
+          true
           EOF
