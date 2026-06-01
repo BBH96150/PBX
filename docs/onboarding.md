@@ -86,29 +86,24 @@ CallCentric portal → DID Forwarding:
   same one from step 3).
 - Save. Confirm by refreshing the page.
 
-### 5. Add DIDs in our platform (~30s per DID — temporary, SQL until A.2 lands)
+### 5. Add DIDs in our platform (~30s per DID — Phase A.2, portal)
 
-For each DID the customer wants:
+Tenant page → **Phone numbers** → **Add a phone number**:
 
-```sql
-INSERT INTO dids (tenant_id, carrier_id, carrier_account_id, e164,
-                  destination_kind, destination_id, cnam, enabled)
-VALUES (
-  (SELECT id FROM tenants WHERE slug = '<tenant_slug>'),
-  (SELECT id FROM carriers WHERE kind = 'callcentric'),
-  (SELECT id FROM carrier_accounts WHERE tenant_id =
-       (SELECT id FROM tenants WHERE slug = '<tenant_slug>') LIMIT 1),
-  '+1XXXXXXXXXX',
-  'extension',
-  (SELECT id FROM extensions WHERE tenant_id =
-       (SELECT id FROM tenants WHERE slug = '<tenant_slug>')
-   AND extension = '<extension_number>'),
-  'Customer DID label',
-  true
-);
-```
+- **Phone number (E.164):** the DID, e.g. `+14155551234` (leading `+` required).
+- **On which trunk does this number arrive?** pick the trunk from step 3.
+- **Route inbound calls to:** any destination you've created for this tenant —
+  an extension, ring group, IVR menu, call queue, or voicemail box. They're
+  grouped in the dropdown; create the destination first (tenant overview) if it
+  isn't listed yet.
+- **CNAM / display name override (optional):** label shown on inbound calls.
 
-When **Phase A.2** lands, this is replaced by a portal page.
+The number appears in the routed-numbers table immediately. Use **Simulate
+ring** to confirm the dialplan resolves it before placing a real test call, and
+**Disable** / **Remove** to take it out of routing.
+
+> Before A.2 this step was a raw `INSERT INTO dids …`. The portal now covers
+> all five `destination_kind`s the dialplan routes, so SQL is no longer needed.
 
 ### 6. Create extensions for the customer's users (~1 min per ext)
 

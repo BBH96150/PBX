@@ -2,7 +2,7 @@
 {{$t := .Tenant}}
 <div class="row">
   <h1 style="margin:0">{{$t.Name}} · Phone numbers</h1>
-  <span class="muted">inbound DID → extension routing</span>
+  <span class="muted">inbound DID → destination routing</span>
 </div>
 
 <nav style="margin-top:0.25rem">
@@ -13,7 +13,7 @@
 <section class="card" style="margin-top:1rem">
   <h2>What this page does</h2>
   <p class="muted" style="font-size:0.9rem">
-    A DID (Direct Inward Dialing) is a phone number assigned to you by your carrier. When someone calls one of your numbers, this page decides which extension rings.
+    A DID (Direct Inward Dialing) is a phone number assigned to you by your carrier. When someone calls one of your numbers, this page decides where the call goes — an extension, ring group, IVR menu, call queue, or voicemail box.
     Each number must belong to one of your <a href="/admin/tenants/{{$t.ID}}/trunks">trunks</a>.
   </p>
 </section>
@@ -28,11 +28,9 @@
       <tr>
         <td><code>{{.E164}}</code></td>
         <td>
-          {{if eq .DestinationKind "extension"}}
-            extension {{index $.ExtLabel .DestinationID}}
-          {{else}}
-            <span class="pill">{{.DestinationKind}}</span> <code>{{.DestinationID}}</code>
-          {{end}}
+          <span class="pill">{{.DestinationKind}}</span>
+          {{$lbl := index $.RowDest .ID}}
+          {{if $lbl}}{{$lbl}}{{else}}<code>{{.DestinationID}}</code>{{end}}
           {{if .CNAM}}<span class="muted" style="font-size:0.82rem">— CNAM: {{.CNAM}}</span>{{end}}
         </td>
         <td>
@@ -68,9 +66,9 @@
     <article class="contrast" style="font-size:0.9rem">
       You need at least one trunk before you can route a number. <a href="/admin/tenants/{{$t.ID}}/trunks">Set up a trunk</a> first.
     </article>
-  {{else if not .Extensions}}
+  {{else if not .HasDest}}
     <article class="contrast" style="font-size:0.9rem">
-      You need at least one extension before you can route a number to it. Go back to the tenant overview to create one.
+      You need at least one destination — an extension, ring group, IVR, queue, or voicemail box — before you can route a number. Go back to the <a href="/admin/tenants/{{$t.ID}}">tenant overview</a> to create one.
     </article>
   {{else}}
   <form method="post" action="/admin/tenants/{{$t.ID}}/dids">
@@ -86,11 +84,16 @@
       </select>
     </label>
     <label>Route inbound calls to
-      <select name="extension_id" required>
-        {{range .Extensions}}
-        <option value="{{.ID}}">{{.Extension}} — {{.DisplayName}}</option>
+      <select name="destination" required>
+        {{range .DestGroups}}
+        <optgroup label="{{.Heading}}">
+          {{range .Options}}
+          <option value="{{.Key}}">{{.Label}}</option>
+          {{end}}
+        </optgroup>
         {{end}}
       </select>
+      <small class="muted">Where calls to this number land. Add ring groups, IVRs, queues, and voicemail boxes from the tenant overview to see them here.</small>
     </label>
     <label>CNAM / display name override (optional)
       <input name="cnam" placeholder="e.g. Main Line">
