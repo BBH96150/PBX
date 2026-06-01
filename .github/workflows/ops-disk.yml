@@ -17,6 +17,10 @@ on:
         description: "Type 'yes' to install a global Docker log-size limit (50m x3) and restart docker."
         required: false
         default: "no"
+      recreate:
+        description: "Type 'yes' to force-recreate all compose containers so they adopt the log cap (brief downtime)."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -39,11 +43,13 @@ jobs:
           USER: ${{ secrets.CI_DEPLOY_USER }}
           CLEAN: ${{ github.event.inputs.clean }}
           HARDEN: ${{ github.event.inputs.harden }}
+          RECREATE: ${{ github.event.inputs.recreate }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
+          RECREATE="${3:-no}"
           echo "===== containers (id -> name) ====="
           docker ps -a --format '{{.ID}}  {{.Names}}  {{.Image}}  ({{.Status}})' 2>/dev/null || true
           echo "===== recent logs of restarting/unhealthy containers ====="
@@ -96,6 +102,20 @@ jobs:
               echo "wrote /etc/docker/daemon.json:"; cat /etc/docker/daemon.json
               systemctl restart docker && echo "docker restarted with global log limits"
             fi
+          fi
+
+          if [ "$RECREATE" = "yes" ]; then
+            echo "===== RECREATE: adopt log caps on all containers ====="
+            cd /root/sip-platform || { echo "no /root/sip-platform"; exit 1; }
+            docker compose -p sip-platform up -d --force-recreate --no-build
+            sleep 8
+            echo "----- container status -----"
+            docker ps -a --format '{{.Names}}  ({{.Status}})'
+            echo "----- effective log config per container -----"
+            for c in $(docker ps -a --format '{{.Names}}'); do
+              printf '%s  ' "$c"
+              docker inspect --format '{{.HostConfig.LogConfig.Type}} {{.HostConfig.LogConfig.Config}}' "$c" 2>/dev/null || echo "?"
+            done
           fi
           echo "===== DONE ====="
           true
