@@ -113,8 +113,10 @@ Tenant page → **Extensions** → **Add extension**:
 - Owner (optional — assign to an invited user later)
 
 The platform generates random SIP credentials. Capture the password from the
-extension detail page — you'll paste it into the user's softphone or send
-them a provisioning QR (when Phase A.3 lands).
+extension detail page (the **Show password** button) and hand the username +
+password to the user for manual entry into their softphone or desk phone. (A
+first-party native softphone app will streamline this later; we're not building
+third-party QR/auto-provisioning in the meantime.)
 
 ### 7. Provision their device
 
