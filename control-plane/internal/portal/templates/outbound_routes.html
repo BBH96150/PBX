@@ -1,0 +1,89 @@
+{{define "outbound_routes_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Outbound routing</h1>
+  <span class="muted">dialed number → trunk selection</span>
+</div>
+
+<nav style="margin-top:0.25rem">
+  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/trunks">Phone trunks</a> ·
+  <a href="/admin/tenants/{{$t.ID}}/dids">Phone numbers</a>
+</nav>
+
+<section class="card" style="margin-top:1rem">
+  <h2>What this page does</h2>
+  <p class="muted" style="font-size:0.9rem">
+    When someone here dials an outside number, these rules decide which <a href="/admin/tenants/{{$t.ID}}/trunks">trunk</a> carries the call.
+    The number is matched against each rule's prefix; the <strong>most specific</strong> enabled rule wins (e.g. <code>+1415</code> beats <code>+1</code> beats a blank catch-all).
+    With no rules configured, calls fall back to your default trunk automatically — so you only need rules here if you want to split traffic across trunks or override the caller ID per destination.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Routes <span class="muted">({{len .Routes}})</span></h2>
+  {{if .Routes}}
+  <table>
+    <thead><tr><th>Match</th><th>Route name</th><th>Via trunk</th><th>Caller ID</th><th>Priority</th><th>State</th><th></th></tr></thead>
+    <tbody>
+      {{range .Routes}}
+      <tr>
+        <td>{{if .MatchPrefix}}<code>{{.MatchPrefix}}…</code>{{else}}<span class="muted">any (catch-all)</span>{{end}}</td>
+        <td>{{.Name}}</td>
+        <td>{{$lbl := index $.AcctLabel .CarrierAccountID}}{{if $lbl}}{{$lbl}}{{else}}<code>{{.CarrierAccountID}}</code>{{end}}</td>
+        <td>{{if .CallerIDE164}}<code>{{.CallerIDE164}}</code>{{else}}<span class="muted">trunk default</span>{{end}}</td>
+        <td>{{.Priority}}</td>
+        <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/outbound-routes/{{.ID}}/toggle" style="display:inline;margin:0">
+            <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+          </form>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/outbound-routes/{{.ID}}/delete" style="display:inline;margin:0;margin-left:0.25rem" onsubmit="return confirm('Remove this route? Calls matching it will fall through to the next rule (or the default trunk).')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No explicit routes — outbound calls use your default trunk. Add a route below only if you need to split traffic or override caller ID.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a route</h2>
+  {{if not .Accounts}}
+    <article class="contrast" style="font-size:0.9rem">
+      You need at least one trunk before you can route outbound calls. <a href="/admin/tenants/{{$t.ID}}/trunks">Set up a trunk</a> first.
+    </article>
+  {{else}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/outbound-routes">
+    <label>Route name
+      <input name="name" placeholder="e.g. US domestic" required>
+    </label>
+    <label>Match prefix (E.164)
+      <input name="match_prefix" placeholder="+1  (blank = catch-all)" pattern="\+[0-9]+">
+      <small class="muted">Calls whose number starts with this prefix use this route. Leave blank to match everything. The most specific match wins.</small>
+    </label>
+    <label>Carry the call on
+      <select name="carrier_account_id" required>
+        {{range .Accounts}}
+        <option value="{{.ID}}">{{.Name}} ({{.CarrierKind}} — {{.SIPUsername}})</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Caller ID override (optional)
+      <input name="caller_id_e164" placeholder="+14155551234">
+      <small class="muted">Number to present on calls via this route. Leave blank to use the trunk's main DID.</small>
+    </label>
+    <label>Priority
+      <input name="priority" type="number" value="100">
+      <small class="muted">Tie-breaker when two routes share the same prefix length — lower wins.</small>
+    </label>
+    <button type="submit">Add route</button>
+  </form>
+  {{end}}
+</section>
+{{end}}

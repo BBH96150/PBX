@@ -83,7 +83,7 @@ For real SIP calls (softphone register, real audio):
 
 - **No TLS on SIP yet** — Kamailio config has the TLS listener block commented out. UDP/TCP only. Phase 2.x.
 - **usrloc is in-memory** (`db_mode=0`) — restarting Kamailio drops registrations. Phase 3 db-backed migration deferred.
-- **Outbound carrier selection picks the first enabled `carrier_account`** — no per-tenant `outbound_routes` matching yet.
+- **Outbound routing** uses per-tenant `outbound_routes` (longest-prefix match → trunk + optional CID override; portal-managed). Tenants with no routes fall back to the first enabled `carrier_account`, preserving the original behavior.
 - **Voicemail recordings live on FreeSWITCH host** — control plane needs the recordings volume mounted to read files for email attachment. Docker compose doesn't share that mount yet; with no mount, emails go out with a "see FS host at <path>" note instead of an attachment.
 - **`cf_busy` works only when `cf_no_answer` is also set** — when both, FS `${cond(originate_disposition)}` branches. When only `cf_busy`, busy→transfer + everything else→voicemail (if enabled).
 - **Per-tenant custom MoH** — only the default `local_stream://moh` is served; per-tenant streams are Phase 5.

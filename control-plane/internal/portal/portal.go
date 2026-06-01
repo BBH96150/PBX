@@ -250,6 +250,10 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants/{tenantID}/dids/{didID}/delete", s.didDelete)
 		r.Post("/tenants/{tenantID}/dids/{didID}/toggle", s.didToggleEnabled)
 		r.Post("/tenants/{tenantID}/dids/{didID}/test-inbound", s.didTestInbound)
+		r.Get("/tenants/{tenantID}/outbound-routes", s.outboundRoutesList)
+		r.Post("/tenants/{tenantID}/outbound-routes", s.outboundRouteCreate)
+		r.Post("/tenants/{tenantID}/outbound-routes/{routeID}/delete", s.outboundRouteDelete)
+		r.Post("/tenants/{tenantID}/outbound-routes/{routeID}/toggle", s.outboundRouteToggle)
 
 		// Phase 4.9: authenticated resend.
 		r.Post("/verify-email/resend", s.verifyEmailResend)

@@ -227,12 +227,23 @@ func (h *Handler) handleOutboundPSTN(w http.ResponseWriter, r *http.Request, des
 	}
 
 	var acct *store.CarrierAccount
+	var cidOverride string
 	if tenantDomain != "" {
 		if tenant, terr := h.store.GetTenantBySIPDomain(r.Context(), tenantDomain); terr == nil && tenant != nil {
-			if a, perr := h.store.PickPrimaryCarrierAccountForTenant(r.Context(), tenant.ID); perr == nil {
-				acct = a
-			} else if !errors.Is(perr, pgx.ErrNoRows) {
-				slog.Warn("tenant carrier lookup failed; will fall back", "tenant", tenant.ID, "err", perr)
+			// 1. Explicit per-tenant outbound route (longest-prefix match).
+			if dec, rerr := h.store.ResolveOutboundRouteForTenant(r.Context(), tenant.ID, normalized); rerr == nil {
+				acct = &dec.Account
+				cidOverride = dec.CIDOverride
+			} else if !errors.Is(rerr, pgx.ErrNoRows) {
+				slog.Warn("outbound route lookup failed; will fall back", "tenant", tenant.ID, "err", rerr)
+			}
+			// 2. No route configured → legacy primary-carrier pick for the tenant.
+			if acct == nil {
+				if a, perr := h.store.PickPrimaryCarrierAccountForTenant(r.Context(), tenant.ID); perr == nil {
+					acct = a
+				} else if !errors.Is(perr, pgx.ErrNoRows) {
+					slog.Warn("tenant carrier lookup failed; will fall back", "tenant", tenant.ID, "err", perr)
+				}
 			}
 		}
 	}
@@ -255,6 +266,9 @@ func (h *Handler) handleOutboundPSTN(w http.ResponseWriter, r *http.Request, des
 	bridgeURI := "sofia/gateway/" + acct.FSGatewayName + "/" + dialDigits
 
 	cid := e164.DialDigits(acct.MainDIDE164)
+	if cidOverride != "" {
+		cid = e164.DialDigits(cidOverride)
+	}
 	cidName := acct.Name
 
 	actions := []dialplanAction{
