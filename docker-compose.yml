@@ -78,6 +78,9 @@ services:
       # on sofia rescan.
       - fs_dynamic_gateways:/etc/freeswitch/sip_profiles/external/dynamic
       - freeswitch_recordings:/var/lib/freeswitch/recordings
+      # Voicemail recordings live under storage_dir; share so the control-plane
+      # can stream them in the portal inbox and attach them to VM-to-email.
+      - freeswitch_storage:/var/lib/freeswitch/storage
       - freeswitch_db:/var/lib/freeswitch/db
       # Phase 5.1: share the log dir so the control-plane can surface
       # registration failure reasons in the portal status fragment.
@@ -148,6 +151,9 @@ services:
       # Phase 5.1: read-only access to FS logs so we can surface registration
       # failure reasons in the trunks UI.
       - fs_logs:/fs-logs:ro
+      # Voicemail inbox: read-only access to FS's storage dir so the portal can
+      # stream recordings (audio_path values resolve under this same path).
+      - freeswitch_storage:/var/lib/freeswitch/storage:ro
     depends_on:
       fs-gateways-init:
         condition: service_completed_successfully
@@ -219,6 +225,7 @@ volumes:
   postgres_data:
   redis_data:
   freeswitch_recordings:
+  freeswitch_storage:
   freeswitch_db:
   fs_dynamic_gateways:
   fs_logs:

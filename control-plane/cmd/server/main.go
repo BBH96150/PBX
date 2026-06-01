@@ -12,15 +12,15 @@ import (
 	"time"
 
 	"github.com/tendpos/sip-platform/control-plane/internal/api"
-	"github.com/tendpos/sip-platform/control-plane/internal/config"
-	"github.com/tendpos/sip-platform/control-plane/internal/freeswitch"
 	"github.com/tendpos/sip-platform/control-plane/internal/audit"
+	"github.com/tendpos/sip-platform/control-plane/internal/config"
 	"github.com/tendpos/sip-platform/control-plane/internal/crypto"
+	"github.com/tendpos/sip-platform/control-plane/internal/freeswitch"
 	"github.com/tendpos/sip-platform/control-plane/internal/portal"
-	"github.com/tendpos/sip-platform/control-plane/internal/sso"
 	"github.com/tendpos/sip-platform/control-plane/internal/provisioning"
 	"github.com/tendpos/sip-platform/control-plane/internal/rps"
 	"github.com/tendpos/sip-platform/control-plane/internal/smtp"
+	"github.com/tendpos/sip-platform/control-plane/internal/sso"
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
 )
 
@@ -166,18 +166,19 @@ func main() {
 	}()
 
 	portalSrv, err := portal.New(st, portal.Options{
-		Mailer:        mailer, // smtp.Mailer satisfies portal.Mailer
-		PortalBaseURL: cfg.PortalBaseURL,
-		Audit:         auditLog,
-		Sealer:        sealer,
-		SSO:           ssoMgr,
-		SAMLKey:       samlKey,
-		GatewaySyncer: gwProvisioner,
-		Originator:    esl, // *ESLClient satisfies portal.CallOriginator via Originate
-		SIPPublicHost:      cfg.SIPPublicHost,
-		SIPPublicPort:      cfg.SIPPublicPort,
-		SIPPublicTransport: cfg.SIPPublicTransport,
-		SIPDomainSuffix:    cfg.SIPDomainSuffix,
+		Mailer:               mailer, // smtp.Mailer satisfies portal.Mailer
+		PortalBaseURL:        cfg.PortalBaseURL,
+		Audit:                auditLog,
+		Sealer:               sealer,
+		SSO:                  ssoMgr,
+		SAMLKey:              samlKey,
+		GatewaySyncer:        gwProvisioner,
+		Originator:           esl, // *ESLClient satisfies portal.CallOriginator via Originate
+		SIPPublicHost:        cfg.SIPPublicHost,
+		SIPPublicPort:        cfg.SIPPublicPort,
+		SIPPublicTransport:   cfg.SIPPublicTransport,
+		SIPDomainSuffix:      cfg.SIPDomainSuffix,
+		VoicemailStorageRoot: cfg.VoicemailStorageRoot,
 	})
 	if err != nil {
 		slog.Error("portal init", "err", err)

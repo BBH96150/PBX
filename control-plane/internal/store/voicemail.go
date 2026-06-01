@@ -2,34 +2,38 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+// ErrVoicemailMessageNotFound is returned when a tenant-scoped message op misses.
+var ErrVoicemailMessageNotFound = errors.New("voicemail message not found for this tenant")
+
 type VoicemailBox struct {
-	ID                 uuid.UUID `json:"id"`
-	TenantID           uuid.UUID `json:"tenant_id"`
-	ExtensionID        uuid.UUID `json:"extension_id"`
-	PIN                string    `json:"pin,omitempty"`
-	Email              string    `json:"email,omitempty"`
-	Timezone           string    `json:"timezone"`
-	MaxMessages        int       `json:"max_messages"`
-	MaxMsgDurationSec  int       `json:"max_msg_duration_sec"`
-	GreetingPath       string    `json:"greeting_path,omitempty"`
-	Enabled            bool      `json:"enabled"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                uuid.UUID `json:"id"`
+	TenantID          uuid.UUID `json:"tenant_id"`
+	ExtensionID       uuid.UUID `json:"extension_id"`
+	PIN               string    `json:"pin,omitempty"`
+	Email             string    `json:"email,omitempty"`
+	Timezone          string    `json:"timezone"`
+	MaxMessages       int       `json:"max_messages"`
+	MaxMsgDurationSec int       `json:"max_msg_duration_sec"`
+	GreetingPath      string    `json:"greeting_path,omitempty"`
+	Enabled           bool      `json:"enabled"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type CreateVoicemailBoxInput struct {
-	TenantID            uuid.UUID
-	ExtensionID         uuid.UUID
-	PIN                 string
-	Email               string
-	Timezone            string
-	MaxMessages         int
-	MaxMsgDurationSec   int
+	TenantID          uuid.UUID
+	ExtensionID       uuid.UUID
+	PIN               string
+	Email             string
+	Timezone          string
+	MaxMessages       int
+	MaxMsgDurationSec int
 }
 
 func (s *Store) CreateVoicemailBox(ctx context.Context, in CreateVoicemailBoxInput) (*VoicemailBox, error) {
@@ -118,6 +122,107 @@ type CreateVoicemailMessageInput struct {
 	AudioPath    string
 }
 
+// VoicemailMessage is one recorded message in a box, as shown in the portal
+// inbox.
+type VoicemailMessage struct {
+	ID           uuid.UUID  `json:"id"`
+	BoxID        uuid.UUID  `json:"box_id"`
+	CallerIDNum  string     `json:"caller_id_num,omitempty"`
+	CallerIDName string     `json:"caller_id_name,omitempty"`
+	ReceivedAt   time.Time  `json:"received_at"`
+	DurationSec  int        `json:"duration_sec"`
+	AudioPath    string     `json:"-"` // host path; never serialized to clients
+	Status       string     `json:"status"`
+	PlayedAt     *time.Time `json:"played_at,omitempty"`
+}
+
+// ListVoicemailMessagesForBox returns the non-deleted messages in a box,
+// newest first.
+func (s *Store) ListVoicemailMessagesForBox(ctx context.Context, boxID uuid.UUID) ([]VoicemailMessage, error) {
+	const q = `
+		SELECT id, box_id, COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
+		       received_at, COALESCE(duration_sec,0), audio_path, status, played_at
+		  FROM voicemail_messages
+		 WHERE box_id = $1 AND status <> 'deleted'
+		 ORDER BY received_at DESC`
+	rows, err := s.DB.Query(ctx, q, boxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VoicemailMessage
+	for rows.Next() {
+		var m VoicemailMessage
+		if err := rows.Scan(
+			&m.ID, &m.BoxID, &m.CallerIDNum, &m.CallerIDName,
+			&m.ReceivedAt, &m.DurationSec, &m.AudioPath, &m.Status, &m.PlayedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// GetVoicemailMessageForTenant fetches one message, enforcing that it belongs
+// to the given tenant (via box → tenant). Used before streaming/deleting so a
+// user can't reach another tenant's recording by guessing a message ID.
+func (s *Store) GetVoicemailMessageForTenant(ctx context.Context, tenantID, msgID uuid.UUID) (*VoicemailMessage, error) {
+	const q = `
+		SELECT m.id, m.box_id, COALESCE(m.caller_id_num,''), COALESCE(m.caller_id_name,''),
+		       m.received_at, COALESCE(m.duration_sec,0), m.audio_path, m.status, m.played_at
+		  FROM voicemail_messages m
+		  JOIN voicemail_boxes b ON b.id = m.box_id
+		 WHERE m.id = $1 AND b.tenant_id = $2 AND m.status <> 'deleted'`
+	var m VoicemailMessage
+	err := s.DB.QueryRow(ctx, q, msgID, tenantID).Scan(
+		&m.ID, &m.BoxID, &m.CallerIDNum, &m.CallerIDName,
+		&m.ReceivedAt, &m.DurationSec, &m.AudioPath, &m.Status, &m.PlayedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// MarkVoicemailMessagePlayed stamps played_at (first play) and promotes a
+// 'new' message to 'saved'. Tenant-scoped; no-op error if it misses.
+func (s *Store) MarkVoicemailMessagePlayed(ctx context.Context, tenantID, msgID uuid.UUID) error {
+	const q = `
+		UPDATE voicemail_messages m
+		   SET played_at = COALESCE(m.played_at, now()),
+		       status = CASE WHEN m.status = 'new' THEN 'saved' ELSE m.status END
+		  FROM voicemail_boxes b
+		 WHERE m.id = $1 AND b.id = m.box_id AND b.tenant_id = $2 AND m.status <> 'deleted'`
+	tag, err := s.DB.Exec(ctx, q, msgID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrVoicemailMessageNotFound
+	}
+	return nil
+}
+
+// DeleteVoicemailMessageForTenant soft-deletes a message (status='deleted',
+// deleted_at=now). The audio file on the FS host is left for FS/cleanup to
+// reap; we just stop surfacing it.
+func (s *Store) DeleteVoicemailMessageForTenant(ctx context.Context, tenantID, msgID uuid.UUID) error {
+	const q = `
+		UPDATE voicemail_messages m
+		   SET status = 'deleted', deleted_at = now()
+		  FROM voicemail_boxes b
+		 WHERE m.id = $1 AND b.id = m.box_id AND b.tenant_id = $2 AND m.status <> 'deleted'`
+	tag, err := s.DB.Exec(ctx, q, msgID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrVoicemailMessageNotFound
+	}
+	return nil
+}
+
 func (s *Store) GetVoicemailBoxByExtensionID(ctx context.Context, extID uuid.UUID) (*VoicemailBox, error) {
 	const q = `
 		SELECT id, tenant_id, extension_id, pin, COALESCE(email::text,''),
@@ -201,8 +306,8 @@ func (s *Store) LookupDirectoryUser(ctx context.Context, domain, user string) (*
 		 WHERE sd.domain = $1 AND e.sip_username = $2 AND e.status = 'active'
 		 LIMIT 1`
 	var (
-		ext Extension
-		vb  VoicemailBox
+		ext    Extension
+		vb     VoicemailBox
 		hasBox bool
 	)
 	var (

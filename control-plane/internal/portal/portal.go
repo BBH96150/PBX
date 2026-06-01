@@ -51,6 +51,9 @@ type Server struct {
 	// Phase A.1: suffix appended to tenant slug to auto-generate the
 	// primary sip_domain on tenant create. Empty disables auto-gen.
 	sipDomainSuffix string
+	// Voicemail inbox: root under which FS-recorded audio_path values must
+	// resolve before we'll stream them (path-traversal guard).
+	vmStorageRoot string
 	// Secure controls cookie Secure flag — set true behind HTTPS.
 	Secure bool
 }
@@ -68,11 +71,11 @@ type Options struct {
 	Mailer        Mailer
 	PortalBaseURL string
 	Audit         *audit.Logger
-	Sealer        *crypto.Sealer    // for TOTP secret seal/open; nil disables 2FA enrollment
-	SSO           *sso.Manager      // for OIDC provider discovery + token exchange
-	SAMLKey       *sso.SAMLKeypair  // shared SP keypair; nil disables SAML routes
-	GatewaySyncer GatewaySyncer     // Phase 5.1: rewrites FS gateway XML + sofia rescan
-	Originator    CallOriginator    // Phase 5.1: FS originate for test-call buttons
+	Sealer        *crypto.Sealer   // for TOTP secret seal/open; nil disables 2FA enrollment
+	SSO           *sso.Manager     // for OIDC provider discovery + token exchange
+	SAMLKey       *sso.SAMLKeypair // shared SP keypair; nil disables SAML routes
+	GatewaySyncer GatewaySyncer    // Phase 5.1: rewrites FS gateway XML + sofia rescan
+	Originator    CallOriginator   // Phase 5.1: FS originate for test-call buttons
 
 	// Phase 5.1: SIP server connection info to display on extension credential
 	// pages so users can configure their softphone/desk phone.
@@ -83,6 +86,10 @@ type Options struct {
 	// Phase A.1: tenant slug + this suffix → primary sip_domain on create.
 	// e.g. "pbx.tendpos.com" → tenant "bbh" gets bbh.pbx.tendpos.com.
 	SIPDomainSuffix string
+
+	// Voicemail inbox: root under which recorded audio files must live for
+	// the portal to stream them. Empty disables voicemail audio streaming.
+	VoicemailStorageRoot string
 }
 
 func New(s *store.Store, opts Options) (*Server, error) {
@@ -106,6 +113,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		sipPublicPort:      opts.SIPPublicPort,
 		sipPublicTransport: opts.SIPPublicTransport,
 		sipDomainSuffix:    strings.TrimPrefix(opts.SIPDomainSuffix, "."),
+		vmStorageRoot:      opts.VoicemailStorageRoot,
 		// Auto-detect cookie Secure flag from PortalBaseURL — when we're
 		// served behind https://, set the flag so browsers refuse to
 		// send the session cookie over plaintext.
@@ -188,6 +196,8 @@ func (s *Server) Router() http.Handler {
 		r.Post("/extensions/{extensionID}/features", s.extensionFeaturesUpdate)
 		r.Post("/extensions/{extensionID}/rotate-password", s.extensionRotatePassword)
 		r.Post("/extensions/{extensionID}/voicemail", s.extensionVoicemailCreate)
+		r.Get("/extensions/{extensionID}/voicemail/messages/{msgID}/audio", s.voicemailMessageAudio)
+		r.Post("/extensions/{extensionID}/voicemail/messages/{msgID}/delete", s.voicemailMessageDelete)
 
 		r.Get("/api-tokens", s.apiTokensList)
 		r.Post("/api-tokens", s.apiTokensCreate)
@@ -392,7 +402,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 				if req, _ := s.store.TenantRequiresEmailVerified(r.Context(), m.TenantID); req {
 					s.audit.Log(r.Context(), audit.Event{
 						TenantID: &m.TenantID, ActorUserID: &u.ID, ActorEmail: u.Email,
-						Event: audit.EventLoginBlockedUnverified,
+						Event:     audit.EventLoginBlockedUnverified,
 						IPAddress: ip, UserAgent: ua,
 					})
 					s.render(w, "login", map[string]any{
@@ -484,7 +494,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		tok, err := s.store.VerifyAPIToken(r.Context(), token)
 		if err != nil {
 			s.audit.Log(r.Context(), audit.Event{
-				Event: audit.EventLoginFailure,
+				Event:     audit.EventLoginFailure,
 				IPAddress: ip, UserAgent: ua,
 				Payload: map[string]any{"reason": "invalid_token"},
 			})
@@ -853,6 +863,10 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	tenant, _ := s.store.GetTenant(r.Context(), ext.TenantID)
 	vmBox, _ := s.store.GetVoicemailBoxByExtensionID(r.Context(), id)
+	var vmMessages []store.VoicemailMessage
+	if vmBox != nil {
+		vmMessages, _ = s.store.ListVoicemailMessagesForBox(r.Context(), vmBox.ID)
+	}
 
 	// Phase 5.1: SIP credentials section. Plaintext password is shown only
 	// when ?reveal=1 is set (so the page is safe to share a screenshot of
@@ -867,6 +881,7 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 		"Tenant":         tenant,
 		"Extension":      ext,
 		"VoicemailBox":   vmBox,
+		"VoicemailMsgs":  vmMessages,
 		"SIPDomain":      domain,
 		"SIPServerHost":  host,
 		"SIPServerPort":  s.sipPublicPort,

@@ -89,6 +89,36 @@
       <tr><td>Max msg duration</td><td>{{.VoicemailBox.MaxMsgDurationSec}}s</td></tr>
     </tbody>
   </table>
+
+  <h3 style="margin-top:1rem">Inbox <span class="muted">({{len .VoicemailMsgs}})</span></h3>
+  {{if .VoicemailMsgs}}
+  <table>
+    <thead><tr><th>Received</th><th>From</th><th>Length</th><th>Status</th><th>Recording</th><th></th></tr></thead>
+    <tbody>
+      {{range .VoicemailMsgs}}
+      <tr>
+        <td class="muted">{{.ReceivedAt.Format "2006-01-02 15:04"}}</td>
+        <td>{{if .CallerIDName}}{{.CallerIDName}} {{end}}{{if .CallerIDNum}}<code>{{.CallerIDNum}}</code>{{else}}<span class="muted">unknown</span>{{end}}</td>
+        <td>{{.DurationSec}}s</td>
+        <td>{{if eq .Status "new"}}<span class="pill pill-ok">new</span>{{else}}<span class="pill">{{.Status}}</span>{{end}}</td>
+        <td>
+          <audio controls preload="none" style="height:2rem;vertical-align:middle">
+            <source src="/admin/extensions/{{$e.ID}}/voicemail/messages/{{.ID}}/audio">
+          </audio>
+          <a href="/admin/extensions/{{$e.ID}}/voicemail/messages/{{.ID}}/audio" download style="margin-left:0.4rem;font-size:0.85rem">Download</a>
+        </td>
+        <td>
+          <form method="post" action="/admin/extensions/{{$e.ID}}/voicemail/messages/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Delete this voicemail? This cannot be undone.')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No messages.</p>
+  {{end}}
 </section>
 {{else if $e.VoicemailEnabled}}
 <section class="card" style="margin-top:1rem">
