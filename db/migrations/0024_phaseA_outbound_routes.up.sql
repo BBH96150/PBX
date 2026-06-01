@@ -7,8 +7,18 @@
 --
 -- Backwards compat: a tenant with no outbound_routes rows keeps the old
 -- behavior (the dialplan falls back to PickPrimaryCarrierAccountForTenant).
+--
+-- NOTE: 0001_init scaffolded an earlier outbound_routes table (columns
+-- pattern/carrier_id/caller_id_override) that was never wired to any code or
+-- written to. We drop and re-create it with the shape the routing logic
+-- actually uses: a route points at a carrier_account (a specific trunk), not a
+-- bare carrier, and the prefix/CID columns gain E.164 CHECK constraints.
 
 BEGIN;
+
+-- The 0001 stub is unused and empty in every environment (no INSERT path ever
+-- existed for it, and nothing references it via FK), so this is non-destructive.
+DROP TABLE IF EXISTS outbound_routes;
 
 CREATE TABLE outbound_routes (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
