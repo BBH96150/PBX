@@ -1,0 +1,74 @@
+name: Ops · disk
+
+# Manually-triggered disk diagnosis + safe cleanup for the Hetzner box.
+# Uses the same SSH secrets the deploy job already uses — no console, no new
+# key. Run with clean=no first to see the breakdown; then clean=yes to apply
+# the non-destructive cleanups (systemd journal vacuum, container log
+# truncation, apt cache). It never touches Postgres data, named volumes, or
+# /var/backups — those are surfaced for a human to decide on.
+on:
+  workflow_dispatch:
+    inputs:
+      clean:
+        description: "Type 'yes' to run safe cleanups (journal/container-logs/apt). Default diagnoses only."
+        required: false
+        default: "no"
+
+jobs:
+  disk:
+    runs-on: ubuntu-latest
+    concurrency:
+      # Share the deploy lock so this never races a deploy on the box.
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Diagnose (and optional safe cleanup)
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          CLEAN: ${{ github.event.inputs.clean }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" <<'EOF'
+          set -uo pipefail
+          CLEAN="${1:-no}"
+          echo "===== df / ====="
+          df -h /
+          echo "===== top /var/* ====="
+          du -shx /var/* 2>/dev/null | sort -h | tail -15
+          echo "===== top /var/lib/docker/* ====="
+          du -shx /var/lib/docker/* 2>/dev/null | sort -h | tail -15
+          echo "===== docker volumes ====="
+          du -shx /var/lib/docker/volumes/* 2>/dev/null | sort -h | tail -15
+          echo "===== docker system df ====="
+          docker system df 2>/dev/null || true
+          echo "===== systemd journal ====="
+          journalctl --disk-usage 2>/dev/null || true
+          echo "===== 20 biggest files under /var ====="
+          find /var -xdev -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -20 \
+            | awk '{ printf "%8.0f MB  %s\n", $1/1048576, $2 }'
+          echo "===== /root /tmp ====="
+          du -shx /root /tmp 2>/dev/null || true
+          echo "===== /var/backups/postgres ====="
+          ls -lhS /var/backups/postgres/ 2>/dev/null | head || echo "(none)"
+
+          if [ "$CLEAN" = "yes" ]; then
+            echo "===== SAFE CLEANUP ====="
+            journalctl --vacuum-size=150M 2>/dev/null || true
+            apt-get clean 2>/dev/null || true
+            for c in $(docker ps -aq 2>/dev/null); do
+              lp=$(docker inspect --format='{{.LogPath}}' "$c" 2>/dev/null || true)
+              if [ -n "${lp:-}" ] && [ -f "$lp" ]; then
+                truncate -s 0 "$lp" && echo "truncated container log: $c"
+              fi
+            done
+            echo "===== df / after cleanup ====="
+            df -h /
+          fi
+          EOF
