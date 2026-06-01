@@ -13,6 +13,10 @@ on:
         description: "Type 'yes' to run safe cleanups (journal/container-logs/apt). Default diagnoses only."
         required: false
         default: "no"
+      harden:
+        description: "Type 'yes' to install a global Docker log-size limit (50m x3) and restart docker."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -34,12 +38,19 @@ jobs:
           HOST: ${{ secrets.CI_DEPLOY_HOST }}
           USER: ${{ secrets.CI_DEPLOY_USER }}
           CLEAN: ${{ github.event.inputs.clean }}
+          HARDEN: ${{ github.event.inputs.harden }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" <<'EOF'
           set -u
           CLEAN="${1:-no}"
+          HARDEN="${2:-no}"
           echo "===== containers (id -> name) ====="
           docker ps -a --format '{{.ID}}  {{.Names}}  {{.Image}}  ({{.Status}})' 2>/dev/null || true
+          echo "===== recent logs of restarting/unhealthy containers ====="
+          for c in $(docker ps -a --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -iE 'restart|unhealthy' | awk '{print $1}'); do
+            echo "----- last 40 lines: $c -----"
+            docker logs --tail 40 "$c" 2>&1 | tail -40 || true
+          done
           echo "===== df / ====="
           df -h /
           echo "===== top /var/* ====="
@@ -72,6 +83,19 @@ jobs:
             done
             echo "===== df / after cleanup ====="
             df -h /
+          fi
+
+          if [ "$HARDEN" = "yes" ]; then
+            echo "===== HARDEN: docker log limits ====="
+            if [ -e /etc/docker/daemon.json ]; then
+              echo "daemon.json already exists — leaving it alone (merge manually):"
+              cat /etc/docker/daemon.json
+            else
+              mkdir -p /etc/docker
+              printf '%s\n' '{' '  "log-driver": "json-file",' '  "log-opts": { "max-size": "50m", "max-file": "3" }' '}' > /etc/docker/daemon.json
+              echo "wrote /etc/docker/daemon.json:"; cat /etc/docker/daemon.json
+              systemctl restart docker && echo "docker restarted with global log limits"
+            fi
           fi
           echo "===== DONE ====="
           true
