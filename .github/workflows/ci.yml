@@ -148,6 +148,31 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
+      - name: Reclaim disk on box
+        # Repeated deploys accumulate old control-plane image versions and
+        # build cache; left unchecked the box fills up and even the few-KB
+        # migrations rsync fails with "No space left on device". (Hit
+        # 2026-06-01 — it had silently broken deploys since the A.8 push.)
+        # Runs FIRST so a full disk self-heals before we try to write to it.
+        # Prunes only unused images + build cache; running containers and
+        # named volumes (Postgres/Redis/recordings data) are untouched.
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          set -uo pipefail
+          echo "::group::disk before"
+          df -h / || true
+          echo "::endgroup::"
+          docker image prune -af || true
+          docker builder prune -af || true
+          docker container prune -f || true
+          echo "::group::disk after"
+          df -h / || true
+          echo "::endgroup::"
+          EOF
+
       - name: Sync db/migrations to box
         # The migrate container reads /migrations from the host bind mount,
         # so any new migration files must exist on disk BEFORE we run
