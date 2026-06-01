@@ -86,6 +86,32 @@ func (s *Store) ListDIDsForTenant(ctx context.Context, tenantID uuid.UUID) ([]DI
 	return out, rows.Err()
 }
 
+// UpdateDIDDestinationInput re-routes an existing DID to a new destination
+// and/or updates its CNAM. Trunk/carrier binding is left unchanged.
+type UpdateDIDDestinationInput struct {
+	DestinationKind string
+	DestinationID   uuid.UUID
+	CNAM            string
+}
+
+// UpdateDIDDestinationForTenant changes where an inbound DID routes. Returns
+// ErrDIDNotFound if the row doesn't exist or belongs to another tenant.
+func (s *Store) UpdateDIDDestinationForTenant(ctx context.Context, tenantID, id uuid.UUID, in UpdateDIDDestinationInput) error {
+	tag, err := s.DB.Exec(ctx, `
+		UPDATE dids
+		   SET destination_kind = $3, destination_id = $4,
+		       cnam = NULLIF($5,''), updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID, in.DestinationKind, in.DestinationID, in.CNAM)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDIDNotFound
+	}
+	return nil
+}
+
 // DeleteDIDForTenant removes a DID from a tenant. Returns an error if the
 // row doesn't exist or belongs to a different tenant (defense in depth).
 func (s *Store) DeleteDIDForTenant(ctx context.Context, tenantID, id uuid.UUID) error {

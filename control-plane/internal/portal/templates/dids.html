@@ -49,6 +49,27 @@
           <form method="post" action="/admin/tenants/{{$t.ID}}/dids/{{.ID}}/delete" style="display:inline;margin:0;margin-left:0.25rem" onsubmit="return confirm('Remove this number from routing? Inbound calls to it will fail until reassigned.')">
             <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
           </form>
+          {{$cur := printf "%s:%s" .DestinationKind .DestinationID}}
+          <details style="margin-top:0.4rem">
+            <summary class="muted" style="font-size:0.85rem;cursor:pointer">Edit routing</summary>
+            <form method="post" action="/admin/tenants/{{$t.ID}}/dids/{{.ID}}/edit" style="margin-top:0.4rem">
+              <label style="font-size:0.85rem">Route inbound calls to
+                <select name="destination" required>
+                  {{range $.DestGroups}}
+                  <optgroup label="{{.Heading}}">
+                    {{range .Options}}
+                    <option value="{{.Key}}"{{if eq .Key $cur}} selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                  </optgroup>
+                  {{end}}
+                </select>
+              </label>
+              <label style="font-size:0.85rem">CNAM override (optional)
+                <input name="cnam" value="{{.CNAM}}" placeholder="e.g. Main Line">
+              </label>
+              <button type="submit" style="padding:0.2rem 0.6rem">Save routing</button>
+            </form>
+          </details>
           <div id="did-test-{{.ID}}" style="margin-top:0.4rem;min-height:1.2rem"></div>
         </td>
       </tr>

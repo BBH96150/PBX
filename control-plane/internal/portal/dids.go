@@ -251,6 +251,65 @@ func (s *Server) didCreate(w http.ResponseWriter, r *http.Request) {
 		http.StatusSeeOther)
 }
 
+// didEdit re-routes an existing DID to a new destination (and updates CNAM),
+// reusing the same kind:uuid validation as create.
+func (s *Server) didEdit(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	didID, err := uuid.Parse(chi.URLParam(r, "didID"))
+	if err != nil {
+		http.Error(w, "bad did id", 400)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", 400)
+		return
+	}
+	redirect := "/admin/tenants/" + tid.String() + "/dids"
+
+	destRaw := r.FormValue("destination")
+	kind, idStr, found := strings.Cut(destRaw, ":")
+	if !found {
+		s.flashErr(w, r, redirect, errors.New("pick where inbound calls should go"))
+		return
+	}
+	destID, err := uuid.Parse(idStr)
+	if err != nil {
+		s.flashErr(w, r, redirect, errors.New("pick where inbound calls should go"))
+		return
+	}
+	_, destLabels := s.didDestinations(r.Context(), tid)
+	if _, ok := destLabels[destRaw]; !ok {
+		s.flashErr(w, r, redirect,
+			errors.New("that destination is no longer available — pick another"))
+		return
+	}
+
+	if err := s.store.UpdateDIDDestinationForTenant(r.Context(), tid, didID, store.UpdateDIDDestinationInput{
+		DestinationKind: kind,
+		DestinationID:   destID,
+		CNAM:            strings.TrimSpace(r.FormValue("cnam")),
+	}); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+
+	ip, ua := audit.FromRequest(r)
+	var actorTok *uuid.UUID
+	if tok := tokenFromCtx(r.Context()); tok != nil {
+		actorTok = &tok.ID
+	}
+	s.audit.Log(r.Context(), audit.Event{
+		TenantID: &tid, ActorTokenID: actorTok,
+		Event: "did.updated", TargetType: "did", TargetID: &didID,
+		IPAddress: ip, UserAgent: ua,
+		Payload: map[string]any{"destination_kind": kind, "destination_id": destID.String()},
+	})
+	http.Redirect(w, r, redirect+"?flash=Routing+updated.", http.StatusSeeOther)
+}
+
 func (s *Server) didDelete(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
 	if !ok {

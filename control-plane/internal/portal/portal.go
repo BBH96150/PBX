@@ -246,6 +246,7 @@ func (s *Server) Router() http.Handler {
 		// Phase 5.1: per-tenant DIDs (inbound number → extension routing).
 		r.Get("/tenants/{tenantID}/dids", s.didsList)
 		r.Post("/tenants/{tenantID}/dids", s.didCreate)
+		r.Post("/tenants/{tenantID}/dids/{didID}/edit", s.didEdit)
 		r.Post("/tenants/{tenantID}/dids/{didID}/delete", s.didDelete)
 		r.Post("/tenants/{tenantID}/dids/{didID}/toggle", s.didToggleEnabled)
 		r.Post("/tenants/{tenantID}/dids/{didID}/test-inbound", s.didTestInbound)
