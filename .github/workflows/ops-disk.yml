@@ -94,24 +94,24 @@ jobs:
           if [ "$ROTATE_ESL" = "yes" ]; then
             echo "===== rotate ESL password (values never printed) ====="
             cd /root/sip-platform || { echo "no project dir"; exit 1; }
-            vlf=freeswitch/conf/vars-local.xml
+            escf=freeswitch/conf/autoload_configs/event_socket.conf.xml
             [ -f .env ] || { echo "no .env — abort"; exit 1; }
-            [ -f "$vlf" ] || { echo "no $vlf — abort"; exit 1; }
+            [ -f "$escf" ] || { echo "no $escf — abort"; exit 1; }
             NEW=$(openssl rand -hex 24 2>/dev/null || (head -c24 /dev/urandom | od -An -tx1 | tr -d ' \n'))
             [ -n "$NEW" ] || { echo "could not generate secret — abort"; exit 1; }
             cp -a .env .env.bak.esl
-            cp -a "$vlf" "$vlf.bak.esl"
+            cp -a "$escf" "$escf.bak.esl"
+            # .env: control-plane connects with this.
             if grep -qE '^ESL_PASSWORD=' .env; then
               sed -i "s|^ESL_PASSWORD=.*|ESL_PASSWORD=$NEW|" .env
             else
               printf 'ESL_PASSWORD=%s\n' "$NEW" >> .env
             fi
-            sed -i '/default_password_esl=/d' "$vlf"
-            sed -i "s|</include>|  <X-PRE-PROCESS cmd=\"set\" data=\"default_password_esl=$NEW\"/>\n</include>|" "$vlf"
-            echo "vars-local.xml default_password_esl lines now: $(grep -c default_password_esl "$vlf")"
-            echo "updated .env + vars-local.xml; force-recreating FS + control-plane..."
-            # --force-recreate so FS actually restarts and re-reads the bind-mounted
-            # vars-local.xml (a plain `up -d` no-ops when the compose config is unchanged).
+            # event_socket.conf.xml: set the literal listener password (no $${} var
+            # indirection — FS's $${var:-default} expansion is unreliable).
+            sed -i "s|<param name=\"password\" value=\"[^\"]*\"/>|<param name=\"password\" value=\"$NEW\"/>|" "$escf"
+            echo "event_socket password param now: $(grep -c "name=\"password\" value=\"$NEW\"" "$escf") match(es)"
+            echo "force-recreating FS + control-plane..."
             docker compose -p sip-platform up -d --force-recreate freeswitch control-plane >/dev/null 2>&1
             ok=0
             for i in $(seq 1 14); do
@@ -120,13 +120,14 @@ jobs:
             done
             hz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz || echo 000)
             echo "esl_connected=$ok  healthz=$hz"
+            echo "last esl log line:"; docker logs --since 200s sip-platform-control-plane-1 2>&1 | grep -iE "esl connected|esl connection lost" | tail -1 || true
             if [ "$ok" = "1" ] && [ "$hz" = "200" ]; then
               echo "ESL ROTATION OK — control-plane reconnected on the new password."
-              rm -f .env.bak.esl "$vlf.bak.esl"
+              rm -f .env.bak.esl "$escf.bak.esl"
             else
               echo "VERIFICATION FAILED — rolling back to previous ESL password."
               cp -a .env.bak.esl .env
-              cp -a "$vlf.bak.esl" "$vlf"
+              cp -a "$escf.bak.esl" "$escf"
               docker compose -p sip-platform up -d --force-recreate freeswitch control-plane >/dev/null 2>&1
               sleep 20
               echo "rolled back; healthz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz || echo 000)"
