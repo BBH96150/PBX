@@ -188,6 +188,21 @@ jobs:
             db/migrations/ \
             "$USER@$HOST:/root/sip-platform/db/migrations/"
 
+      - name: Sync prod compose override to box
+        # Repo-controlled, ADDITIVE override layer (see docker-compose.prod.yml).
+        # Lands as docker-compose.override.yml, which Compose auto-merges on top
+        # of the box's hand-maintained base. We deliberately do NOT sync the
+        # base compose — it has diverged in prod-specific ways that a blind
+        # rsync would break.
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          rsync -avz \
+            -e "ssh -o IdentitiesOnly=yes" \
+            docker-compose.prod.yml \
+            "$USER@$HOST:/root/sip-platform/docker-compose.override.yml"
+
       - name: Pull image, run migrations, restart control-plane
         env:
           HOST: ${{ secrets.CI_DEPLOY_HOST }}

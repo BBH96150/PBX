@@ -1,0 +1,27 @@
+# Production compose OVERRIDE layer.
+#
+# The ci.yml deploy job rsyncs this file to the box as
+# `docker-compose.override.yml`, which Docker Compose auto-merges on top of the
+# box's base `docker-compose.yml`.
+#
+# IMPORTANT: the base `docker-compose.yml` ON THE BOX is hand-maintained and
+# has diverged from this repo's base (it uses `image:` instead of `build:`,
+# file-mounted SAML certs, an always-on Caddy, a different redis port binding,
+# and predates SIP_DOMAIN_SUFFIX / fs-gateways-init). So we do NOT sync the base
+# — syncing it would break prod. Only put ADDITIVE, prod-safe deltas here.
+#
+# Compose merges service `volumes:` additively, so these mounts are appended to
+# whatever the base already defines.
+
+services:
+  freeswitch:
+    # Voicemail recordings live under storage_dir; share so the control-plane
+    # can stream them in the portal inbox and attach them to VM-to-email.
+    volumes:
+      - freeswitch_storage:/var/lib/freeswitch/storage
+  control-plane:
+    volumes:
+      - freeswitch_storage:/var/lib/freeswitch/storage:ro
+
+volumes:
+  freeswitch_storage:
