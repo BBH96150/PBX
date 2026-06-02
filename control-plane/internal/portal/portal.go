@@ -188,6 +188,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}", s.tenantDetail)
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
+		r.Post("/tenants/{tenantID}/moh", s.tenantSetMoH)
 		r.Post("/tenants/{tenantID}/extensions", s.createExtension)
 		r.Post("/tenants/{tenantID}/extensions/bulk", s.bulkCreateExtensions)
 		r.Post("/tenants/{tenantID}/devices", s.createDevice)
@@ -747,8 +748,24 @@ func (s *Server) tenantDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	data["IVRs"], _ = listIVRs(ctx, s.store, tid)
 	data["Queues"], _ = listQueues(ctx, s.store, tid)
+	data["MoH"], _ = s.store.GetTenantMoH(ctx, tid)
 
 	s.renderLayout(w, r, tenant.Name, "tenant", data)
+}
+
+// tenantSetMoH updates a tenant's Music-on-Hold source.
+func (s *Server) tenantSetMoH(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/tenants/" + tid.String()
+	if err := s.store.SetTenantMoH(r.Context(), tid, strings.TrimSpace(r.FormValue("moh_url"))); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	http.Redirect(w, r, redirect+"?flash=Music+on+hold+saved.", http.StatusSeeOther)
 }
 
 // ---------------------------------------------------------------------------

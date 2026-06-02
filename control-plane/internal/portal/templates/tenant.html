@@ -219,5 +219,17 @@
     <p class="muted">Add via API (carrier_account + dest UUID required).</p>
   </section>
 
+  <section class="card">
+    <h2>Music on hold</h2>
+    <p class="muted" style="font-size:0.9rem">Custom hold music for this tenant's calls (transfers/holds). Leave blank for the platform default.</p>
+    <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/moh">
+      <label>Source URI
+        <input name="moh_url" value="{{.MoH}}" placeholder="shout://example.com/stream  ·  local_stream://moh  ·  /path/file.wav" style="min-width:28rem">
+      </label>
+      <button type="submit">Save</button>
+      <small class="muted">Any FreeSWITCH-resolvable source: <code>shout://</code> internet radio, a <code>local_stream://</code> directory, or a file path/URL.</small>
+    </form>
+  </section>
+
 </div>
 {{end}}

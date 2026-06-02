@@ -146,9 +146,9 @@ type SignupInput struct {
 }
 
 // CreateTenantWithAdmin runs the whole signup in one transaction:
-//   1. Insert tenant (with billing + plan).
-//   2. Insert user (no users.tenant_id — multi-tenant memberships only).
-//   3. Insert membership(user, tenant, tenant_admin).
+//  1. Insert tenant (with billing + plan).
+//  2. Insert user (no users.tenant_id — multi-tenant memberships only).
+//  3. Insert membership(user, tenant, tenant_admin).
 //
 // Returns the tenant and user. Used by /v1/signup.
 func (s *Store) CreateTenantWithAdmin(ctx context.Context, in SignupInput) (*Tenant, *User, error) {
@@ -270,4 +270,34 @@ func (s *Store) PrimaryDomainForTenant(ctx context.Context, tenantID uuid.UUID) 
 		return nil, err
 	}
 	return &d, nil
+}
+
+// GetTenantMoH returns a tenant's custom Music-on-Hold URI (” = use default).
+func (s *Store) GetTenantMoH(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	var moh string
+	err := s.DB.QueryRow(ctx,
+		`SELECT COALESCE(moh_url,'') FROM tenants WHERE id = $1`, tenantID).Scan(&moh)
+	return moh, err
+}
+
+// SetTenantMoH updates a tenant's Music-on-Hold URI (” clears it).
+func (s *Store) SetTenantMoH(ctx context.Context, tenantID uuid.UUID, moh string) error {
+	_, err := s.DB.Exec(ctx,
+		`UPDATE tenants SET moh_url = NULLIF($2,''), updated_at = now() WHERE id = $1`,
+		tenantID, moh)
+	return err
+}
+
+// TenantMoHByDomain resolves a SIP domain to the owning tenant's MoH URI.
+// Best-effort for the dialplan: returns ” (the platform default) on any miss.
+func (s *Store) TenantMoHByDomain(ctx context.Context, sipDomain string) string {
+	var moh string
+	err := s.DB.QueryRow(ctx, `
+		SELECT COALESCE(t.moh_url,'')
+		  FROM tenants t JOIN sip_domains sd ON sd.tenant_id = t.id
+		 WHERE sd.domain = $1 LIMIT 1`, sipDomain).Scan(&moh)
+	if err != nil {
+		return ""
+	}
+	return moh
 }

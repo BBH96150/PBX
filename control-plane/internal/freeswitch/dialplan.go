@@ -18,9 +18,10 @@ import (
 // Handler responds to FreeSWITCH mod_xml_curl dialplan lookups.
 //
 // Phase 2 routing matrix:
-//   context=default + destination is internal extension → bridge via Kamailio
-//   context=default + destination looks like E.164      → outbound PSTN via gateway
-//   context=public  (carrier gateways' inbound context) → DID lookup → inbound to extension
+//
+//	context=default + destination is internal extension → bridge via Kamailio
+//	context=default + destination looks like E.164      → outbound PSTN via gateway
+//	context=public  (carrier gateways' inbound context) → DID lookup → inbound to extension
 type Handler struct {
 	store     *store.Store
 	sipTarget string // host:port of Kamailio
@@ -183,6 +184,12 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request, destNum,
 		// Phase 3 Wave 5.5: feature codes — caller can press *2 / *3 mid-call.
 		{App: "bind_meta_app", Data: "2 a s execute_extension::att_xfer XML features"},
 		{App: "bind_meta_app", Data: "3 a s execute_extension::blind_xfer XML features"},
+	}
+
+	// Per-tenant Music on Hold: override the default hold_music when the tenant
+	// has a custom source. Best-effort, cosmetic — never affects routing.
+	if moh := h.store.TenantMoHByDomain(ctx, domain); moh != "" {
+		actions = append(actions, dialplanAction{App: "set", Data: "hold_music=" + moh})
 	}
 
 	// Phase 3 Wave 5.0: always-record. record_session writes to a per-tenant /
@@ -360,17 +367,22 @@ func (h *Handler) handleInboundPSTN(w http.ResponseWriter, r *http.Request, dest
 	bridgeURI := fmt.Sprintf("sofia/internal/sip:%s@%s;fs_path=sip:%s;lr",
 		target.SIPUsername, target.SIPDomain, h.sipTarget)
 
+	inboundActions := []dialplanAction{
+		{App: "set", Data: "hangup_after_bridge=true"},
+		{App: "set", Data: "x_call_direction=inbound"},
+		{App: "set", Data: "x_tenant_id=" + target.TenantID.String()},
+		{App: "set", Data: "x_did=" + normalized},
+		{App: "set", Data: "x_did_id=" + target.DIDID.String()},
+	}
+	if moh := h.store.TenantMoHByDomain(r.Context(), target.SIPDomain); moh != "" {
+		inboundActions = append(inboundActions, dialplanAction{App: "set", Data: "hold_music=" + moh})
+	}
+	inboundActions = append(inboundActions, dialplanAction{App: "bridge", Data: bridgeURI})
+
 	writeDialplan(w, dialplanData{
 		Context: "public",
 		Name:    "inbound-" + e164.DialDigits(normalized),
-		Actions: []dialplanAction{
-			{App: "set", Data: "hangup_after_bridge=true"},
-			{App: "set", Data: "x_call_direction=inbound"},
-			{App: "set", Data: "x_tenant_id=" + target.TenantID.String()},
-			{App: "set", Data: "x_did=" + normalized},
-			{App: "set", Data: "x_did_id=" + target.DIDID.String()},
-			{App: "bridge", Data: bridgeURI},
-		},
+		Actions: inboundActions,
 	})
 }
 
