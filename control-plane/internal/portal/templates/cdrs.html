@@ -6,6 +6,24 @@
 </div>
 
 <section class="card" style="margin-top:1rem">
+  <form method="get" action="/admin/tenants/{{$t.ID}}/cdrs" class="inline">
+    <label>Direction
+      <select name="direction">
+        <option value="" {{if eq .Direction ""}}selected{{end}}>any</option>
+        <option value="inbound" {{if eq .Direction "inbound"}}selected{{end}}>inbound</option>
+        <option value="outbound" {{if eq .Direction "outbound"}}selected{{end}}>outbound</option>
+        <option value="internal" {{if eq .Direction "internal"}}selected{{end}}>internal</option>
+      </select>
+    </label>
+    <label>Search<input name="q" value="{{.Search}}" placeholder="number or name"></label>
+    <label>From<input name="since" type="date" value="{{.Since}}"></label>
+    <label>To<input name="until" type="date" value="{{.Until}}"></label>
+    <button type="submit">Filter</button>
+    <a href="/admin/tenants/{{$t.ID}}/cdrs" role="button" class="secondary">Clear</a>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
   <h2>Recent calls ({{len .CDRs}} shown, most recent first)</h2>
   {{if .CDRs}}
   <table>

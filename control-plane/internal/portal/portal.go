@@ -14,6 +14,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,6 +189,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
 		r.Post("/tenants/{tenantID}/extensions", s.createExtension)
+		r.Post("/tenants/{tenantID}/extensions/bulk", s.bulkCreateExtensions)
 		r.Post("/tenants/{tenantID}/devices", s.createDevice)
 		r.Get("/tenants/{tenantID}/devices/{mac}", s.deviceDetail)
 		r.Post("/tenants/{tenantID}/devices/{mac}/lines", s.deviceLineAdd)
@@ -784,6 +787,63 @@ func (s *Server) createExtension(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/tenants/"+tid.String(), http.StatusSeeOther)
 }
 
+// bulkCreateExtensions creates many extensions from a pasted list, one per
+// line, "<extension>[,<display name>]". SIP credentials are auto-generated.
+// Partial success is fine: it reports how many were created vs skipped.
+func (s *Server) bulkCreateExtensions(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/tenants/" + tid.String()
+	domainID, err := uuid.Parse(r.FormValue("sip_domain_id"))
+	if err != nil {
+		s.flashErr(w, r, redirect, errors.New("a primary SIP domain is required"))
+		return
+	}
+	var created, skipped int
+	var firstErr string
+	for _, line := range strings.Split(r.FormValue("csv"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		ext, display := line, ""
+		if i := strings.IndexAny(line, ",\t"); i >= 0 {
+			ext = strings.TrimSpace(line[:i])
+			display = strings.TrimSpace(line[i+1:])
+		}
+		if ext == "" {
+			continue
+		}
+		if _, err := s.store.CreateExtension(r.Context(), tid, domainID, ext, "", "", display); err != nil {
+			skipped++
+			if firstErr == "" {
+				firstErr = ext + ": " + err.Error()
+			}
+			continue
+		}
+		created++
+	}
+	ip, ua := audit.FromRequest(r)
+	var actorTok *uuid.UUID
+	if tok := tokenFromCtx(r.Context()); tok != nil {
+		actorTok = &tok.ID
+	}
+	s.audit.Log(r.Context(), audit.Event{
+		TenantID: &tid, ActorTokenID: actorTok,
+		Event: "extension.bulk_created", TargetType: "tenant", TargetID: &tid,
+		IPAddress: ip, UserAgent: ua,
+		Payload: map[string]any{"created": created, "skipped": skipped},
+	})
+	msg := "Created " + strconv.Itoa(created) + ", skipped " + strconv.Itoa(skipped)
+	if firstErr != "" {
+		msg += " (first error — " + firstErr + ")"
+	}
+	http.Redirect(w, r, redirect+"?flash="+url.QueryEscape(msg), http.StatusSeeOther)
+}
+
 func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
 	if !ok {
@@ -859,10 +919,33 @@ func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
 		s.errPage(w, r, err)
 		return
 	}
-	cdrs, _ := s.store.ListCDRsForTenant(r.Context(), tid, 200)
+	q := r.URL.Query()
+	filter := store.CDRFilter{
+		Direction: q.Get("direction"),
+		Search:    strings.TrimSpace(q.Get("q")),
+		Limit:     200,
+	}
+	// Dates are YYYY-MM-DD in the box's local interpretation (UTC here). "until"
+	// is inclusive of the chosen day, so advance it by 24h.
+	if v := q.Get("since"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			filter.Since = &t
+		}
+	}
+	if v := q.Get("until"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			end := t.Add(24 * time.Hour)
+			filter.Until = &end
+		}
+	}
+	cdrs, _ := s.store.ListCDRsFilteredForTenant(r.Context(), tid, filter)
 	s.renderLayout(w, r, tenant.Name+" · CDRs", "cdrs", map[string]any{
-		"Tenant": tenant,
-		"CDRs":   cdrs,
+		"Tenant":    tenant,
+		"CDRs":      cdrs,
+		"Direction": filter.Direction,
+		"Search":    filter.Search,
+		"Since":     q.Get("since"),
+		"Until":     q.Get("until"),
 	})
 }
 

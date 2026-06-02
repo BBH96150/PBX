@@ -71,6 +71,61 @@ func (s *Store) ListCDRsForTenant(ctx context.Context, tenantID uuid.UUID, limit
 	return out, rows.Err()
 }
 
+// CDRFilter narrows a CDR query. Empty/nil fields are ignored.
+type CDRFilter struct {
+	Direction string     // "" = all; else inbound|outbound|internal
+	Search    string     // matches from/to/caller number or name (ILIKE)
+	Since     *time.Time // started_at >= Since
+	Until     *time.Time // started_at < Until
+	Limit     int        // capped at 500
+}
+
+// ListCDRsFilteredForTenant returns CDRs matching the filter, newest first.
+// All filter clauses are parameterized (no dynamic SQL).
+func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUID, f CDRFilter) ([]CDR, error) {
+	if f.Limit <= 0 || f.Limit > 500 {
+		f.Limit = 200
+	}
+	const q = `
+		SELECT id, tenant_id, call_uuid, direction, from_uri, to_uri,
+		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
+		       started_at, answered_at, ended_at,
+		       duration_sec, billable_sec, disposition,
+		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''),
+		       raw
+		  FROM cdrs
+		 WHERE tenant_id = $1
+		   AND ($2 = '' OR direction = $2)
+		   AND ($3 = '' OR from_uri ILIKE '%'||$3||'%' OR to_uri ILIKE '%'||$3||'%'
+		        OR COALESCE(caller_id_num,'') ILIKE '%'||$3||'%'
+		        OR COALESCE(caller_id_name,'') ILIKE '%'||$3||'%')
+		   AND ($4::timestamptz IS NULL OR started_at >= $4)
+		   AND ($5::timestamptz IS NULL OR started_at < $5)
+		 ORDER BY started_at DESC LIMIT $6`
+	rows, err := s.DB.Query(ctx, q, tenantID, f.Direction, f.Search, f.Since, f.Until, f.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CDR
+	for rows.Next() {
+		var c CDR
+		var rawJSON []byte
+		if err := rows.Scan(
+			&c.ID, &c.TenantID, &c.CallUUID, &c.Direction, &c.FromURI, &c.ToURI,
+			&c.CallerIDNum, &c.CallerIDName,
+			&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
+			&c.DurationSec, &c.BillableSec, &c.Disposition,
+			&c.HangupCause, &c.CarrierID, &c.RecordingPath,
+			&rawJSON,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // CreateCDR inserts a CDR. ON CONFLICT (call_uuid) DO NOTHING absorbs the
 // duplicate writes that happen when both call legs fire CHANNEL_HANGUP_COMPLETE
 // (Phase 2 we only listen to A-leg, but defensive anyway).

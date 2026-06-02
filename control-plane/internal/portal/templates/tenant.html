@@ -84,6 +84,16 @@
       </form>
       {{if not $primaryDomain}}<small class="muted">Add a primary SIP domain first.</small>{{end}}
     </details>
+    <details><summary>Bulk import</summary>
+      <form method="post" action="/admin/tenants/{{$t.ID}}/extensions/bulk">
+        <input type="hidden" name="sip_domain_id" value="{{if $primaryDomain}}{{$primaryDomain.ID}}{{end}}">
+        <label>One per line: <code>number,display name</code>
+          <textarea name="csv" rows="6" placeholder="101,Alice&#10;102,Bob&#10;103,Front Desk" style="font-family:monospace"></textarea>
+        </label>
+        <button type="submit"{{if not $primaryDomain}} disabled{{end}}>Import</button>
+        <small class="muted">SIP passwords are auto-generated; open each extension to view/copy. Duplicates are skipped.</small>
+      </form>
+    </details>
   </section>
 
   <section class="card">
