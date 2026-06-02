@@ -64,7 +64,10 @@ jobs:
           APPLY_VM_OVERRIDE="${5:-no}"
           if [ "$SHOW_COMPOSE" = "yes" ]; then
             echo "===== BEGIN on-box docker-compose.yml ====="
-            sed -e 's/\(PASSWORD[^:=]*[:=]\).*/\1 <redacted>/Ig' -e 's/\(SECRET[^:=]*[:=]\).*/\1 <redacted>/Ig' /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
+            # Mask only literal secret values (key contains PASSWORD/SECRET/TOKEN/KEY
+            # followed by : or = and a value NOT starting with $). ${VAR} refs and
+            # file paths are preserved so the structure is reviewable.
+            sed -E 's/((PASSWORD|SECRET|TOKEN|_KEY)[A-Za-z_]*[[:space:]]*[:=][[:space:]]*)([^$].*)/\1<redacted>/I' /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
             echo "===== END on-box docker-compose.yml ====="
           fi
           if [ "$APPLY_VM_OVERRIDE" = "yes" ]; then
