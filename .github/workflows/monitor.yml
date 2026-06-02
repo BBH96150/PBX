@@ -1,0 +1,69 @@
+name: Monitor · health
+
+# Scheduled heartbeat against the Hetzner box so problems page someone instead
+# of festering (today's outage was silent for days). Checks disk %, that every
+# expected container is running/healthy, and that the control-plane answers
+# /healthz. On any problem the job exits non-zero — GitHub emails repo admins on
+# a failed scheduled run, which is the alert.
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # every 30 minutes
+  workflow_dispatch: {}
+
+# Don't pile up if the box is slow; a run every 30 min is plenty.
+concurrency:
+  group: monitor-health
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Health check
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          DISK_PCT_ALERT: "85"
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$DISK_PCT_ALERT" <<'EOF'
+          set -u
+          THRESH="${1:-85}"
+          PROBLEMS=""
+
+          USE=$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')
+          USE="${USE:-0}"
+          if [ "$USE" -ge "$THRESH" ]; then
+            PROBLEMS="${PROBLEMS}disk ${USE}% >= ${THRESH}%; "
+          fi
+
+          for c in postgres redis kamailio freeswitch control-plane caddy; do
+            name="sip-platform-${c}-1"
+            status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo missing)
+            health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$name" 2>/dev/null || echo "")
+            if [ "$status" != "running" ]; then
+              PROBLEMS="${PROBLEMS}${name}=${status}; "
+            elif [ -n "$health" ] && [ "$health" != "healthy" ]; then
+              PROBLEMS="${PROBLEMS}${name} health=${health}; "
+            fi
+          done
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz 2>/dev/null || echo 000)
+          if [ "$code" != "200" ]; then
+            PROBLEMS="${PROBLEMS}control-plane /healthz=${code}; "
+          fi
+
+          echo "disk=${USE}%  healthz=${code}"
+          docker ps --format '{{.Names}}  {{.Status}}'
+          if [ -n "$PROBLEMS" ]; then
+            echo "::error::UNHEALTHY: ${PROBLEMS}"
+            exit 1
+          fi
+          echo "All healthy."
+          EOF
