@@ -41,6 +41,10 @@ on:
         description: "Type 'yes' for a read-only ESL diagnosis (current connection state + how FS resolves the password expression). No restart."
         required: false
         default: "no"
+      compose_apply:
+        description: "Type 'yes' to run `docker compose up -d` on the box (applies the synced override; recreates only services whose config changed)."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -69,8 +73,9 @@ jobs:
           CHECK_ENV: ${{ github.event.inputs.check_env }}
           ROTATE_ESL: ${{ github.event.inputs.rotate_esl }}
           DIAG_ESL: ${{ github.event.inputs.diag_esl }}
+          COMPOSE_APPLY: ${{ github.event.inputs.compose_apply }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -80,6 +85,14 @@ jobs:
           CHECK_ENV="${6:-no}"
           ROTATE_ESL="${7:-no}"
           DIAG_ESL="${8:-no}"
+          COMPOSE_APPLY="${9:-no}"
+          if [ "$COMPOSE_APPLY" = "yes" ]; then
+            echo "===== docker compose up -d (apply synced override) ====="
+            cd /root/sip-platform || { echo "no project dir"; exit 1; }
+            docker compose -p sip-platform up -d --no-build
+            sleep 10
+            docker ps --format '{{.Names}}  {{.Status}}'
+          fi
           if [ "$DIAG_ESL" = "yes" ]; then
             echo "===== ESL diagnosis (read-only) ====="
             echo "-- current control-plane ESL state (recent logs) --"

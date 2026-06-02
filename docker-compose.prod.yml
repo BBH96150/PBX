@@ -19,6 +19,16 @@ services:
     # can stream them in the portal inbox and attach them to VM-to-email.
     volumes:
       - freeswitch_storage:/var/lib/freeswitch/storage
+    # The image's default /healthcheck.sh authenticates to ESL via fs_cli, so it
+    # reports "unhealthy" whenever the ESL password is rotated away from the
+    # default. Replace it with a password-free readiness probe: ESL port 8021
+    # accepting a TCP connection means FreeSWITCH is up.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8021 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
   control-plane:
     volumes:
       - freeswitch_storage:/var/lib/freeswitch/storage:ro
