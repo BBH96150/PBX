@@ -14,7 +14,17 @@
     <tr><td>Extension</td><td>{{if $q.Extension}}<code>{{$q.Extension}}</code>{{else}}<span class="muted">none (DID-only)</span>{{end}}</td></tr>
     <tr><td>Strategy</td><td><span class="pill">{{$q.Strategy}}</span></td></tr>
     <tr><td>Max wait</td><td>{{$q.MaxWaitTime}}s</td></tr>
+    <tr><td>State</td><td>{{if $q.Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td></tr>
   </tbody></table>
+  <div style="margin-top:0.5rem">
+    <form method="post" action="/admin/tenants/{{$t.ID}}/queues/{{$q.ID}}/toggle" style="display:inline;margin:0">
+      <input type="hidden" name="enabled" value="{{if $q.Enabled}}false{{else}}true{{end}}">
+      <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">{{if $q.Enabled}}Disable{{else}}Enable{{end}}</button>
+    </form>
+    <form method="post" action="/admin/tenants/{{$t.ID}}/queues/{{$q.ID}}/delete" style="display:inline;margin:0;margin-left:0.25rem" onsubmit="return confirm('Delete this queue and all its agents? This cannot be undone.')">
+      <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Delete queue</button>
+    </form>
+  </div>
 </section>
 
 <section class="card" style="margin-top:1rem">

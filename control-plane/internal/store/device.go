@@ -157,6 +157,24 @@ func (s *Store) GetDevice(ctx context.Context, mac string) (*Device, error) {
 	return &d, nil
 }
 
+// DeleteDeviceForTenant removes a device (and its lines, via ON DELETE
+// CASCADE), scoped to the owning tenant.
+func (s *Store) DeleteDeviceForTenant(ctx context.Context, tenantID uuid.UUID, mac string) error {
+	normMAC, err := normalizeMAC(mac)
+	if err != nil {
+		return err
+	}
+	tag, err := s.DB.Exec(ctx,
+		`DELETE FROM devices WHERE mac = $1::macaddr AND tenant_id = $2`, normMAC, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
+}
+
 // MarkRPSSynced timestamps a successful RPS push and clears any prior error.
 func (s *Store) MarkRPSSynced(ctx context.Context, mac string) error {
 	normMAC, err := normalizeMAC(mac)

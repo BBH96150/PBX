@@ -3,12 +3,56 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 )
 
 // ErrNestedNotFound is returned when a tenant-scoped nested-entity op misses.
 var ErrNestedNotFound = errors.New("nested entity not found for this tenant")
+
+// allowedScopedTable whitelists the tables deleteScoped/setEnabledScoped may
+// touch — the table name is interpolated into SQL, so it must never come from
+// user input. All callers pass a hardcoded constant; this is belt-and-braces.
+func allowedScopedTable(t string) bool {
+	switch t {
+	case "ring_groups", "ivrs", "queues":
+		return true
+	}
+	return false
+}
+
+// deleteScoped deletes one row by id within a tenant. Child rows are removed by
+// the schema's ON DELETE CASCADE.
+func (s *Store) deleteScoped(ctx context.Context, table, idCol string, id, tid uuid.UUID) error {
+	if !allowedScopedTable(table) {
+		return fmt.Errorf("deleteScoped: table %q not allowed", table)
+	}
+	q := fmt.Sprintf(`DELETE FROM %s WHERE %s = $1 AND tenant_id = $2`, table, idCol)
+	tag, err := s.DB.Exec(ctx, q, id, tid)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
+}
+
+func (s *Store) setEnabledScoped(ctx context.Context, table string, id, tid uuid.UUID, enabled bool) error {
+	if !allowedScopedTable(table) {
+		return fmt.Errorf("setEnabledScoped: table %q not allowed", table)
+	}
+	q := fmt.Sprintf(`UPDATE %s SET enabled = $3, updated_at = now() WHERE id = $1 AND tenant_id = $2`, table)
+	tag, err := s.DB.Exec(ctx, q, id, tid, enabled)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
+}
 
 // ---- Ring group members ----
 
@@ -57,6 +101,14 @@ func (s *Store) ListRingGroupMembersDetailed(ctx context.Context, rgID uuid.UUID
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) DeleteRingGroupForTenant(ctx context.Context, tid, id uuid.UUID) error {
+	return s.deleteScoped(ctx, "ring_groups", "id", id, tid)
+}
+
+func (s *Store) SetRingGroupEnabledForTenant(ctx context.Context, tid, id uuid.UUID, enabled bool) error {
+	return s.setEnabledScoped(ctx, "ring_groups", id, tid, enabled)
 }
 
 func (s *Store) DeleteRingGroupMemberForTenant(ctx context.Context, tid, memberID uuid.UUID) error {
@@ -116,6 +168,14 @@ func (s *Store) ListIVROptions(ctx context.Context, ivrID uuid.UUID) ([]IVROptio
 		out = append(out, o)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) DeleteIVRForTenant(ctx context.Context, tid, id uuid.UUID) error {
+	return s.deleteScoped(ctx, "ivrs", "id", id, tid)
+}
+
+func (s *Store) SetIVREnabledForTenant(ctx context.Context, tid, id uuid.UUID, enabled bool) error {
+	return s.setEnabledScoped(ctx, "ivrs", id, tid, enabled)
 }
 
 func (s *Store) DeleteIVROptionForTenant(ctx context.Context, tid, optID uuid.UUID) error {
@@ -189,6 +249,14 @@ func (s *Store) ListQueueAgentsDetailed(ctx context.Context, queueID uuid.UUID) 
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) DeleteQueueForTenant(ctx context.Context, tid, id uuid.UUID) error {
+	return s.deleteScoped(ctx, "queues", "id", id, tid)
+}
+
+func (s *Store) SetQueueEnabledForTenant(ctx context.Context, tid, id uuid.UUID, enabled bool) error {
+	return s.setEnabledScoped(ctx, "queues", id, tid, enabled)
 }
 
 func (s *Store) DeleteQueueAgentForTenant(ctx context.Context, tid, agentID uuid.UUID) error {

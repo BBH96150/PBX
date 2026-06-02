@@ -17,6 +17,11 @@
     <tr><td>Last provisioned</td><td>{{if $d.LastProvisionedAt}}{{$d.LastProvisionedAt.Format "2006-01-02 15:04"}} {{if $d.LastProvisionedIP}}from <code>{{$d.LastProvisionedIP}}</code>{{end}}{{else}}<span class="muted">never</span>{{end}}</td></tr>
     <tr><td>RPS</td><td>{{if $d.RPSSyncedAt}}<span class="pill pill-ok">synced</span>{{else if $d.RPSLastError}}<span class="pill pill-warn">{{$d.RPSLastError}}</span>{{else}}<span class="pill">pending</span>{{end}}</td></tr>
   </tbody></table>
+  <div style="margin-top:0.5rem">
+    <form method="post" action="/admin/tenants/{{$t.ID}}/devices/{{$d.MAC}}/delete" style="margin:0" onsubmit="return confirm('Delete this device and unbind all its lines? This cannot be undone.')">
+      <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Delete device</button>
+    </form>
+  </div>
 </section>
 
 <section class="card" style="margin-top:1rem">

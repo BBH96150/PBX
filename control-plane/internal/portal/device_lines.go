@@ -112,3 +112,22 @@ func (s *Server) deviceLineRemove(w http.ResponseWriter, r *http.Request) {
 	s.auditNested(r, tid, "device.line.unbound", "device_line", &lineID, nil)
 	http.Redirect(w, r, redirect+"?flash=Line+unbound.", http.StatusSeeOther)
 }
+
+func (s *Server) deviceDelete(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	mac, err := url.PathUnescape(chi.URLParam(r, "mac"))
+	if err != nil {
+		http.Error(w, "bad mac", 400)
+		return
+	}
+	tenantHome := "/admin/tenants/" + tid.String()
+	if err := s.store.DeleteDeviceForTenant(r.Context(), tid, mac); err != nil {
+		s.flashErr(w, r, tenantHome+"/devices/"+url.PathEscape(mac), err)
+		return
+	}
+	s.auditNested(r, tid, "device.deleted", "device", nil, map[string]any{"device_mac": mac})
+	http.Redirect(w, r, tenantHome+"?flash=Device+deleted.", http.StatusSeeOther)
+}

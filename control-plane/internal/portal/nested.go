@@ -123,6 +123,44 @@ func (s *Server) ringGroupMemberRemove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect+"?flash=Member+removed.", http.StatusSeeOther)
 }
 
+func (s *Server) ringGroupDelete(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "rgID"))
+	if err != nil {
+		http.Error(w, "bad ring group id", 400)
+		return
+	}
+	tenantHome := "/admin/tenants/" + tid.String()
+	if err := s.store.DeleteRingGroupForTenant(r.Context(), tid, id); err != nil {
+		s.flashErr(w, r, tenantHome+"/ring-groups/"+id.String(), err)
+		return
+	}
+	s.auditNested(r, tid, "ring_group.deleted", "ring_group", &id, nil)
+	http.Redirect(w, r, tenantHome+"?flash=Ring+group+deleted.", http.StatusSeeOther)
+}
+
+func (s *Server) ringGroupToggle(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "rgID"))
+	if err != nil {
+		http.Error(w, "bad ring group id", 400)
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/tenants/" + tid.String() + "/ring-groups/" + id.String()
+	if err := s.store.SetRingGroupEnabledForTenant(r.Context(), tid, id, r.FormValue("enabled") == "true"); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
+}
+
 // ================= IVR options =================
 
 func (s *Server) ivrDetail(w http.ResponseWriter, r *http.Request) {
@@ -268,6 +306,44 @@ func (s *Server) ivrOptionRemove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect+"?flash=Option+removed.", http.StatusSeeOther)
 }
 
+func (s *Server) ivrDelete(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "ivrID"))
+	if err != nil {
+		http.Error(w, "bad ivr id", 400)
+		return
+	}
+	tenantHome := "/admin/tenants/" + tid.String()
+	if err := s.store.DeleteIVRForTenant(r.Context(), tid, id); err != nil {
+		s.flashErr(w, r, tenantHome+"/ivrs/"+id.String(), err)
+		return
+	}
+	s.auditNested(r, tid, "ivr.deleted", "ivr", &id, nil)
+	http.Redirect(w, r, tenantHome+"?flash=IVR+deleted.", http.StatusSeeOther)
+}
+
+func (s *Server) ivrToggle(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "ivrID"))
+	if err != nil {
+		http.Error(w, "bad ivr id", 400)
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/tenants/" + tid.String() + "/ivrs/" + id.String()
+	if err := s.store.SetIVREnabledForTenant(r.Context(), tid, id, r.FormValue("enabled") == "true"); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
+}
+
 // ================= Queue agents =================
 
 func (s *Server) queueDetail(w http.ResponseWriter, r *http.Request) {
@@ -355,6 +431,44 @@ func (s *Server) queueAgentRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditNested(r, tid, "queue.agent.removed", "queue_agent", &agentID, nil)
 	http.Redirect(w, r, redirect+"?flash=Agent+removed.", http.StatusSeeOther)
+}
+
+func (s *Server) queueDelete(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "queueID"))
+	if err != nil {
+		http.Error(w, "bad queue id", 400)
+		return
+	}
+	tenantHome := "/admin/tenants/" + tid.String()
+	if err := s.store.DeleteQueueForTenant(r.Context(), tid, id); err != nil {
+		s.flashErr(w, r, tenantHome+"/queues/"+id.String(), err)
+		return
+	}
+	s.auditNested(r, tid, "queue.deleted", "queue", &id, nil)
+	http.Redirect(w, r, tenantHome+"?flash=Queue+deleted.", http.StatusSeeOther)
+}
+
+func (s *Server) queueToggle(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "queueID"))
+	if err != nil {
+		http.Error(w, "bad queue id", 400)
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/tenants/" + tid.String() + "/queues/" + id.String()
+	if err := s.store.SetQueueEnabledForTenant(r.Context(), tid, id, r.FormValue("enabled") == "true"); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
 }
 
 // friendlyDupErr maps a unique-violation to a human message; otherwise returns
