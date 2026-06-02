@@ -25,6 +25,10 @@ on:
         description: "Type 'yes' to print the on-box docker-compose.yml (to diff against the repo)."
         required: false
         default: "no"
+      apply_vm_override:
+        description: "Type 'yes' to add the freeswitch_storage volume via docker-compose.override.yml (fixes voicemail recordings on prod)."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -49,17 +53,49 @@ jobs:
           HARDEN: ${{ github.event.inputs.harden }}
           RECREATE: ${{ github.event.inputs.recreate }}
           SHOW_COMPOSE: ${{ github.event.inputs.show_compose }}
+          APPLY_VM_OVERRIDE: ${{ github.event.inputs.apply_vm_override }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
           RECREATE="${3:-no}"
           SHOW_COMPOSE="${4:-no}"
+          APPLY_VM_OVERRIDE="${5:-no}"
           if [ "$SHOW_COMPOSE" = "yes" ]; then
             echo "===== BEGIN on-box docker-compose.yml ====="
             sed -e 's/\(PASSWORD[^:=]*[:=]\).*/\1 <redacted>/Ig' -e 's/\(SECRET[^:=]*[:=]\).*/\1 <redacted>/Ig' /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
             echo "===== END on-box docker-compose.yml ====="
+          fi
+          if [ "$APPLY_VM_OVERRIDE" = "yes" ]; then
+            echo "===== APPLY freeswitch_storage override ====="
+            cd /root/sip-platform || { echo "no /root/sip-platform"; exit 1; }
+            if [ -e docker-compose.override.yml ]; then
+              echo "docker-compose.override.yml already exists — not clobbering:"
+              cat docker-compose.override.yml
+            else
+              printf '%s\n' \
+                'services:' \
+                '  freeswitch:' \
+                '    volumes:' \
+                '      - freeswitch_storage:/var/lib/freeswitch/storage' \
+                '  control-plane:' \
+                '    volumes:' \
+                '      - freeswitch_storage:/var/lib/freeswitch/storage:ro' \
+                'volumes:' \
+                '  freeswitch_storage:' \
+                > docker-compose.override.yml
+              echo "wrote docker-compose.override.yml:"; cat docker-compose.override.yml
+              if docker compose -p sip-platform config >/dev/null; then
+                echo "compose config valid; applying..."
+                docker compose -p sip-platform up -d --no-build
+                sleep 6
+                echo "----- control-plane storage mounts -----"
+                docker inspect --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' sip-platform-control-plane-1 2>/dev/null | grep -i storage || echo "(storage mount NOT found)"
+              else
+                echo "compose config INVALID — reverting override"; rm -f docker-compose.override.yml
+              fi
+            fi
           fi
           echo "===== containers (id -> name) ====="
           docker ps -a --format '{{.ID}}  {{.Names}}  {{.Image}}  ({{.Status}})' 2>/dev/null || true
