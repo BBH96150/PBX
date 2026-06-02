@@ -33,6 +33,10 @@ on:
         description: "Type 'yes' to check whether prod .env overrides the compose default credentials (reports status only, never values)."
         required: false
         default: "no"
+      rotate_esl:
+        description: "Type 'yes' to rotate the FreeSWITCH ESL password to a fresh secret (restarts FS + control-plane; auto-rolls-back if it can't reconnect)."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -59,8 +63,9 @@ jobs:
           SHOW_COMPOSE: ${{ github.event.inputs.show_compose }}
           APPLY_VM_OVERRIDE: ${{ github.event.inputs.apply_vm_override }}
           CHECK_ENV: ${{ github.event.inputs.check_env }}
+          ROTATE_ESL: ${{ github.event.inputs.rotate_esl }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -68,6 +73,45 @@ jobs:
           SHOW_COMPOSE="${4:-no}"
           APPLY_VM_OVERRIDE="${5:-no}"
           CHECK_ENV="${6:-no}"
+          ROTATE_ESL="${7:-no}"
+          if [ "$ROTATE_ESL" = "yes" ]; then
+            echo "===== rotate ESL password (values never printed) ====="
+            cd /root/sip-platform || { echo "no project dir"; exit 1; }
+            vlf=freeswitch/conf/vars-local.xml
+            [ -f .env ] || { echo "no .env — abort"; exit 1; }
+            [ -f "$vlf" ] || { echo "no $vlf — abort"; exit 1; }
+            NEW=$(openssl rand -hex 24 2>/dev/null || (head -c24 /dev/urandom | od -An -tx1 | tr -d ' \n'))
+            [ -n "$NEW" ] || { echo "could not generate secret — abort"; exit 1; }
+            cp -a .env .env.bak.esl
+            cp -a "$vlf" "$vlf.bak.esl"
+            if grep -qE '^ESL_PASSWORD=' .env; then
+              sed -i "s|^ESL_PASSWORD=.*|ESL_PASSWORD=$NEW|" .env
+            else
+              printf 'ESL_PASSWORD=%s\n' "$NEW" >> .env
+            fi
+            sed -i '/default_password_esl=/d' "$vlf"
+            sed -i "s|</include>|  <X-PRE-PROCESS cmd=\"set\" data=\"default_password_esl=$NEW\"/>\n</include>|" "$vlf"
+            echo "updated .env + vars-local.xml; recreating FS + control-plane..."
+            docker compose -p sip-platform up -d freeswitch control-plane >/dev/null 2>&1
+            ok=0
+            for i in $(seq 1 10); do
+              sleep 10
+              if docker logs --since 180s sip-platform-control-plane-1 2>&1 | grep -q "esl connected"; then ok=1; break; fi
+            done
+            hz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz || echo 000)
+            echo "esl_connected=$ok  healthz=$hz"
+            if [ "$ok" = "1" ] && [ "$hz" = "200" ]; then
+              echo "ESL ROTATION OK — control-plane reconnected on the new password."
+              rm -f .env.bak.esl "$vlf.bak.esl"
+            else
+              echo "VERIFICATION FAILED — rolling back to previous ESL password."
+              cp -a .env.bak.esl .env
+              cp -a "$vlf.bak.esl" "$vlf"
+              docker compose -p sip-platform up -d freeswitch control-plane >/dev/null 2>&1
+              sleep 15
+              echo "rolled back; healthz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz || echo 000)"
+            fi
+          fi
           if [ "$CHECK_ENV" = "yes" ]; then
             echo "===== credential check (status only, NO values printed) ====="
             envf=/root/sip-platform/.env
