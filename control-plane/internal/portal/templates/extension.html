@@ -18,6 +18,17 @@
       <tr><td>Created</td><td class="muted">{{$e.CreatedAt.Format "2006-01-02 15:04"}}</td></tr>
     </tbody>
   </table>
+  <details style="margin-top:0.5rem">
+    <summary class="muted" style="cursor:pointer">Rename / delete</summary>
+    <form method="post" action="/admin/extensions/{{$e.ID}}/rename" style="margin-top:0.5rem">
+      <label>Display name<input name="display_name" value="{{$e.DisplayName}}" placeholder="Alice"></label>
+      <button type="submit">Save name</button>
+    </form>
+    <form method="post" action="/admin/extensions/{{$e.ID}}/delete" style="margin-top:0.5rem" onsubmit="return confirm('Delete extension {{$e.Extension}}? This removes it from any ring groups, queues, devices, and its voicemail box. This cannot be undone.')">
+      <button type="submit" class="secondary">Delete extension</button>
+    </form>
+    <small class="muted">The extension number and SIP identity can't be changed — delete and recreate if you need a different number.</small>
+  </details>
 </section>
 
 <section class="card" style="margin-top:1rem">

@@ -216,6 +216,8 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/extensions/{extensionID}", s.extensionDetail)
 		r.Post("/extensions/{extensionID}/features", s.extensionFeaturesUpdate)
+		r.Post("/extensions/{extensionID}/rename", s.extensionRename)
+		r.Post("/extensions/{extensionID}/delete", s.extensionDelete)
 		r.Post("/extensions/{extensionID}/rotate-password", s.extensionRotatePassword)
 		r.Post("/extensions/{extensionID}/voicemail", s.extensionVoicemailCreate)
 		r.Get("/extensions/{extensionID}/voicemail/messages/{msgID}/audio", s.voicemailMessageAudio)
@@ -981,6 +983,68 @@ func (s *Server) extensionFeaturesUpdate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	http.Redirect(w, r, "/admin/extensions/"+id.String()+"?flash=saved", http.StatusSeeOther)
+}
+
+// extensionRename updates the display name. The extension number / SIP identity
+// are intentionally immutable (changing them would break registration).
+func (s *Server) extensionRename(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/extensions/" + id.String()
+	if err := s.store.UpdateExtensionDisplayName(r.Context(), id, strings.TrimSpace(r.FormValue("display_name"))); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, ext.TenantID, "extension.renamed", "extension", &id, nil)
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
+}
+
+// extensionDelete hard-deletes an extension, but only after confirming no DID
+// routes to it (those aren't FK-protected and would silently orphan).
+func (s *Server) extensionDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	redirect := "/admin/extensions/" + id.String()
+	dids, err := s.store.ExtensionInboundDIDs(r.Context(), id)
+	if err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	if len(dids) > 0 {
+		s.flashErr(w, r, redirect, errors.New("reassign the DID(s) routing here first: "+strings.Join(dids, ", ")))
+		return
+	}
+	if err := s.store.DeleteExtension(r.Context(), id); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, ext.TenantID, "extension.deleted", "extension", &id, nil)
+	http.Redirect(w, r, "/admin/tenants/"+ext.TenantID.String()+"?flash=Extension+deleted.", http.StatusSeeOther)
 }
 
 func (s *Server) extensionVoicemailCreate(w http.ResponseWriter, r *http.Request) {

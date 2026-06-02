@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// ErrExtensionNotFound is returned when an extension update/delete misses.
+var ErrExtensionNotFound = errors.New("extension not found")
 
 type Extension struct {
 	ID               uuid.UUID  `json:"id"`
@@ -117,6 +121,56 @@ func (s *Store) UpdateExtensionFeatures(ctx context.Context, id uuid.UUID, in Up
 		return nil, err
 	}
 	return &e, nil
+}
+
+// UpdateExtensionDisplayName changes only the human label. The extension
+// number / SIP identity stay fixed (changing those would break registration).
+func (s *Store) UpdateExtensionDisplayName(ctx context.Context, id uuid.UUID, displayName string) error {
+	tag, err := s.DB.Exec(ctx,
+		`UPDATE extensions SET display_name = NULLIF($2,''), updated_at = now() WHERE id = $1`,
+		id, displayName)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrExtensionNotFound
+	}
+	return nil
+}
+
+// ExtensionInboundDIDs returns the E.164 numbers of any DIDs that route
+// directly to this extension. Used to block deletion until they're reassigned
+// (dids.destination_id is not an FK, so a delete would silently orphan them).
+func (s *Store) ExtensionInboundDIDs(ctx context.Context, extID uuid.UUID) ([]string, error) {
+	const q = `SELECT e164 FROM dids WHERE destination_kind = 'extension' AND destination_id = $1 ORDER BY e164`
+	rows, err := s.DB.Query(ctx, q, extID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// DeleteExtension hard-deletes an extension. Members / agents / device lines /
+// voicemail boxes are removed by ON DELETE CASCADE. Callers must first confirm
+// no DID points at it (see ExtensionInboundDIDs).
+func (s *Store) DeleteExtension(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.DB.Exec(ctx, `DELETE FROM extensions WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrExtensionNotFound
+	}
+	return nil
 }
 
 // LookupExtensionForRouting resolves (tenant_domain, extension_number) → extension+domain
