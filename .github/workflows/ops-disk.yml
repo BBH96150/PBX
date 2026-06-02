@@ -37,6 +37,10 @@ on:
         description: "Type 'yes' to rotate the FreeSWITCH ESL password to a fresh secret (restarts FS + control-plane; auto-rolls-back if it can't reconnect)."
         required: false
         default: "no"
+      diag_esl:
+        description: "Type 'yes' for a read-only ESL diagnosis (current connection state + how FS resolves the password expression). No restart."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -64,8 +68,9 @@ jobs:
           APPLY_VM_OVERRIDE: ${{ github.event.inputs.apply_vm_override }}
           CHECK_ENV: ${{ github.event.inputs.check_env }}
           ROTATE_ESL: ${{ github.event.inputs.rotate_esl }}
+          DIAG_ESL: ${{ github.event.inputs.diag_esl }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -74,6 +79,18 @@ jobs:
           APPLY_VM_OVERRIDE="${5:-no}"
           CHECK_ENV="${6:-no}"
           ROTATE_ESL="${7:-no}"
+          DIAG_ESL="${8:-no}"
+          if [ "$DIAG_ESL" = "yes" ]; then
+            echo "===== ESL diagnosis (read-only) ====="
+            echo "-- current control-plane ESL state (recent logs) --"
+            docker logs --since 1200s sip-platform-control-plane-1 2>&1 | grep -iE "esl connected|esl connection lost" | tail -5 || echo "(no recent esl log lines)"
+            echo "-- event_socket.conf.xml password param (on box) --"
+            grep -i "password" /root/sip-platform/freeswitch/conf/autoload_configs/event_socket.conf.xml 2>/dev/null || echo "(not found)"
+            echo "-- how FS resolves the expression (eval) --"
+            docker exec sip-platform-freeswitch-1 fs_cli -x 'eval $${default_password_esl:-ClueCon}' 2>&1 | head -3 || echo "(fs_cli failed)"
+            echo "-- global var default_password_esl --"
+            docker exec sip-platform-freeswitch-1 fs_cli -x 'global_getvar default_password_esl' 2>&1 | head -3 || echo "(fs_cli failed)"
+          fi
           if [ "$ROTATE_ESL" = "yes" ]; then
             echo "===== rotate ESL password (values never printed) ====="
             cd /root/sip-platform || { echo "no project dir"; exit 1; }
