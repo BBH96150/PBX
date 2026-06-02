@@ -14,13 +14,13 @@ func TestValidE164Prefix(t *testing.T) {
 		{"+1", true},
 		{"+1415", true},
 		{"+447911", true},
-		{"", false},        // caller treats blank as catch-all, not a prefix
-		{"+", false},       // plus with no digits
-		{"1415", false},    // missing leading +
-		{"+1 415", false},  // space
-		{"+1-415", false},  // punctuation
-		{"+1a", false},     // letter
-		{"++1", false},     // double plus
+		{"", false},       // caller treats blank as catch-all, not a prefix
+		{"+", false},      // plus with no digits
+		{"1415", false},   // missing leading +
+		{"+1 415", false}, // space
+		{"+1-415", false}, // punctuation
+		{"+1a", false},    // letter
+		{"++1", false},    // double plus
 	}
 	for _, c := range cases {
 		if got := validE164Prefix(c.in); got != c.want {
