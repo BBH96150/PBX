@@ -107,8 +107,8 @@ jobs:
             docker inspect sip-platform-freeswitch-1 --format '{{json .Config.Healthcheck}}' 2>&1 | head -3 || echo "(none)"
             echo "-- FS health log (last status) --"
             docker inspect sip-platform-freeswitch-1 --format '{{json .State.Health}}' 2>&1 | head -c 600; echo
-            echo "-- /healthcheck.sh contents --"
-            docker exec sip-platform-freeswitch-1 sh -c 'cat /healthcheck.sh 2>/dev/null' 2>&1 | head -25 || echo "(exec failed)"
+            echo "-- candidate password-free probes (exit codes) --"
+            docker exec sip-platform-freeswitch-1 sh -c 'pidof freeswitch >/dev/null 2>&1; echo "pidof freeswitch -> $?"; netstat -ltn 2>/dev/null | grep -q ":8021 "; echo "netstat :8021 -> $?"' 2>&1 | head -5 || echo "(exec failed)"
             echo "-- fs_cli config + liveness tools --"
             docker exec sip-platform-freeswitch-1 sh -c 'cat /etc/fs_cli.conf 2>/dev/null; cat /root/.fs_cli_conf 2>/dev/null; for t in nc pidof pgrep ss netstat bash; do command -v $t >/dev/null 2>&1 && echo "tool $t: yes"; done' 2>&1 | head -15 || echo "(exec failed)"
           fi
