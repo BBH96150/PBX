@@ -25,6 +25,19 @@
       <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Delete IVR</button>
     </form>
   </div>
+  <details style="margin-top:0.6rem">
+    <summary class="muted" style="cursor:pointer">Edit settings</summary>
+    <form method="post" action="/admin/tenants/{{$t.ID}}/ivrs/{{$ivr.ID}}/edit" style="margin-top:0.5rem">
+      <label>Name<input name="name" value="{{$ivr.Name}}" required></label>
+      <label>Extension<input name="extension" value="{{$ivr.Extension}}" placeholder="300"></label>
+      <label>Long greeting (sound path)<input name="greeting_long" value="{{$ivr.GreetingLong}}"></label>
+      <label>Short greeting (sound path)<input name="greeting_short" value="{{$ivr.GreetingShort}}"></label>
+      <label>Timeout (ms)<input name="timeout_ms" type="number" value="{{$ivr.TimeoutMS}}"></label>
+      <label>Inter-digit timeout (ms)<input name="inter_digit_timeout_ms" type="number" value="{{$ivr.InterDigitTimeoutMS}}"></label>
+      <label>Digit length<input name="digit_len" type="number" value="{{$ivr.DigitLen}}"></label>
+      <button type="submit">Save settings</button>
+    </form>
+  </details>
 </section>
 
 <section class="card" style="margin-top:1rem">

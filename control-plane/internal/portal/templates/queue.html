@@ -25,6 +25,29 @@
       <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Delete queue</button>
     </form>
   </div>
+  <details style="margin-top:0.6rem">
+    <summary class="muted" style="cursor:pointer">Edit settings</summary>
+    <form method="post" action="/admin/tenants/{{$t.ID}}/queues/{{$q.ID}}/edit" style="margin-top:0.5rem">
+      <label>Name<input name="name" value="{{$q.Name}}" required></label>
+      <label>Extension<input name="extension" value="{{$q.Extension}}" placeholder="500"></label>
+      <label>Strategy
+        <select name="strategy">
+          {{$s := $q.Strategy}}
+          <option value="longest-idle-agent"{{if eq $s "longest-idle-agent"}} selected{{end}}>longest-idle-agent</option>
+          <option value="round-robin"{{if eq $s "round-robin"}} selected{{end}}>round-robin</option>
+          <option value="top-down"{{if eq $s "top-down"}} selected{{end}}>top-down</option>
+          <option value="ring-all"{{if eq $s "ring-all"}} selected{{end}}>ring-all</option>
+          <option value="random"{{if eq $s "random"}} selected{{end}}>random</option>
+          <option value="sequentially-by-agent-order"{{if eq $s "sequentially-by-agent-order"}} selected{{end}}>sequentially-by-agent-order</option>
+          <option value="agent-with-least-talk-time"{{if eq $s "agent-with-least-talk-time"}} selected{{end}}>agent-with-least-talk-time</option>
+          <option value="agent-with-fewest-calls"{{if eq $s "agent-with-fewest-calls"}} selected{{end}}>agent-with-fewest-calls</option>
+        </select>
+      </label>
+      <label>Music on hold<input name="moh_sound" value="{{$q.MOHSound}}" placeholder="local_stream://moh"></label>
+      <label>Max wait (sec)<input name="max_wait_time" type="number" value="{{$q.MaxWaitTime}}"></label>
+      <button type="submit">Save settings</button>
+    </form>
+  </details>
 </section>
 
 <section class="card" style="margin-top:1rem">

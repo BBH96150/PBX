@@ -123,6 +123,40 @@ func (s *Server) ringGroupMemberRemove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect+"?flash=Member+removed.", http.StatusSeeOther)
 }
 
+func (s *Server) ringGroupEdit(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "rgID"))
+	if err != nil {
+		http.Error(w, "bad ring group id", 400)
+		return
+	}
+	redirect := "/admin/tenants/" + tid.String() + "/ring-groups/" + id.String()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", 400)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		s.flashErr(w, r, redirect, errors.New("name is required"))
+		return
+	}
+	if err := s.store.UpdateRingGroupForTenant(r.Context(), tid, id, store.UpdateRingGroupInput{
+		Name:           name,
+		Extension:      strings.TrimSpace(r.FormValue("extension")),
+		Strategy:       r.FormValue("strategy"),
+		RingTimeoutSec: atoiOr(r.FormValue("ring_timeout_sec"), 30),
+		CallerIDPrefix: strings.TrimSpace(r.FormValue("caller_id_prefix")),
+	}); err != nil {
+		s.flashErr(w, r, redirect, friendlyDupErr(err, "that extension is already in use"))
+		return
+	}
+	s.auditNested(r, tid, "ring_group.updated", "ring_group", &id, nil)
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
+}
+
 func (s *Server) ringGroupDelete(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
 	if !ok {
@@ -306,6 +340,42 @@ func (s *Server) ivrOptionRemove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect+"?flash=Option+removed.", http.StatusSeeOther)
 }
 
+func (s *Server) ivrEdit(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "ivrID"))
+	if err != nil {
+		http.Error(w, "bad ivr id", 400)
+		return
+	}
+	redirect := "/admin/tenants/" + tid.String() + "/ivrs/" + id.String()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", 400)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		s.flashErr(w, r, redirect, errors.New("name is required"))
+		return
+	}
+	if err := s.store.UpdateIVRForTenant(r.Context(), tid, id, store.UpdateIVRInput{
+		Name:                name,
+		Extension:           strings.TrimSpace(r.FormValue("extension")),
+		GreetingLong:        strings.TrimSpace(r.FormValue("greeting_long")),
+		GreetingShort:       strings.TrimSpace(r.FormValue("greeting_short")),
+		TimeoutMS:           atoiOr(r.FormValue("timeout_ms"), 0),
+		InterDigitTimeoutMS: atoiOr(r.FormValue("inter_digit_timeout_ms"), 0),
+		DigitLen:            atoiOr(r.FormValue("digit_len"), 0),
+	}); err != nil {
+		s.flashErr(w, r, redirect, friendlyDupErr(err, "that extension is already in use"))
+		return
+	}
+	s.auditNested(r, tid, "ivr.updated", "ivr", &id, nil)
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
+}
+
 func (s *Server) ivrDelete(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
 	if !ok {
@@ -431,6 +501,40 @@ func (s *Server) queueAgentRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditNested(r, tid, "queue.agent.removed", "queue_agent", &agentID, nil)
 	http.Redirect(w, r, redirect+"?flash=Agent+removed.", http.StatusSeeOther)
+}
+
+func (s *Server) queueEdit(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "queueID"))
+	if err != nil {
+		http.Error(w, "bad queue id", 400)
+		return
+	}
+	redirect := "/admin/tenants/" + tid.String() + "/queues/" + id.String()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", 400)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		s.flashErr(w, r, redirect, errors.New("name is required"))
+		return
+	}
+	if err := s.store.UpdateQueueForTenant(r.Context(), tid, id, store.UpdateQueueInput{
+		Name:        name,
+		Extension:   strings.TrimSpace(r.FormValue("extension")),
+		Strategy:    r.FormValue("strategy"),
+		MOHSound:    strings.TrimSpace(r.FormValue("moh_sound")),
+		MaxWaitTime: atoiOr(r.FormValue("max_wait_time"), 0),
+	}); err != nil {
+		s.flashErr(w, r, redirect, friendlyDupErr(err, "that extension is already in use"))
+		return
+	}
+	s.auditNested(r, tid, "queue.updated", "queue", &id, nil)
+	http.Redirect(w, r, redirect+"?flash=Saved.", http.StatusSeeOther)
 }
 
 func (s *Server) queueDelete(w http.ResponseWriter, r *http.Request) {

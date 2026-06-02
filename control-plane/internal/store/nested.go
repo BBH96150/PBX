@@ -103,6 +103,32 @@ func (s *Store) ListRingGroupMembersDetailed(ctx context.Context, rgID uuid.UUID
 	return out, rows.Err()
 }
 
+// UpdateRingGroupInput carries the editable fields of a ring group.
+type UpdateRingGroupInput struct {
+	Name           string
+	Extension      string
+	Strategy       string
+	RingTimeoutSec int
+	CallerIDPrefix string
+}
+
+func (s *Store) UpdateRingGroupForTenant(ctx context.Context, tid, id uuid.UUID, in UpdateRingGroupInput) error {
+	const q = `
+		UPDATE ring_groups
+		   SET name = $3, extension = NULLIF($4,''), strategy = $5,
+		       ring_timeout_sec = $6, caller_id_prefix = NULLIF($7,''),
+		       updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`
+	tag, err := s.DB.Exec(ctx, q, id, tid, in.Name, in.Extension, in.Strategy, in.RingTimeoutSec, in.CallerIDPrefix)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
+}
+
 func (s *Store) DeleteRingGroupForTenant(ctx context.Context, tid, id uuid.UUID) error {
 	return s.deleteScoped(ctx, "ring_groups", "id", id, tid)
 }
@@ -168,6 +194,39 @@ func (s *Store) ListIVROptions(ctx context.Context, ivrID uuid.UUID) ([]IVROptio
 		out = append(out, o)
 	}
 	return out, rows.Err()
+}
+
+// UpdateIVRInput carries the editable fields of an IVR.
+type UpdateIVRInput struct {
+	Name                string
+	Extension           string
+	GreetingLong        string
+	GreetingShort       string
+	TimeoutMS           int
+	InterDigitTimeoutMS int
+	DigitLen            int
+}
+
+func (s *Store) UpdateIVRForTenant(ctx context.Context, tid, id uuid.UUID, in UpdateIVRInput) error {
+	const q = `
+		UPDATE ivrs
+		   SET name = $3, extension = NULLIF($4,''),
+		       greeting_long  = COALESCE(NULLIF($5,''), greeting_long),
+		       greeting_short = COALESCE(NULLIF($6,''), greeting_short),
+		       timeout_ms = COALESCE(NULLIF($7,0), timeout_ms),
+		       inter_digit_timeout_ms = COALESCE(NULLIF($8,0), inter_digit_timeout_ms),
+		       digit_len = COALESCE(NULLIF($9,0), digit_len),
+		       updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`
+	tag, err := s.DB.Exec(ctx, q, id, tid, in.Name, in.Extension,
+		in.GreetingLong, in.GreetingShort, in.TimeoutMS, in.InterDigitTimeoutMS, in.DigitLen)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
 }
 
 func (s *Store) DeleteIVRForTenant(ctx context.Context, tid, id uuid.UUID) error {
@@ -249,6 +308,32 @@ func (s *Store) ListQueueAgentsDetailed(ctx context.Context, queueID uuid.UUID) 
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// UpdateQueueInput carries the editable fields of a queue.
+type UpdateQueueInput struct {
+	Name        string
+	Extension   string
+	Strategy    string
+	MOHSound    string
+	MaxWaitTime int
+}
+
+func (s *Store) UpdateQueueForTenant(ctx context.Context, tid, id uuid.UUID, in UpdateQueueInput) error {
+	const q = `
+		UPDATE queues
+		   SET name = $3, extension = NULLIF($4,''), strategy = $5,
+		       moh_sound = COALESCE(NULLIF($6,''), moh_sound),
+		       max_wait_time = $7, updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`
+	tag, err := s.DB.Exec(ctx, q, id, tid, in.Name, in.Extension, in.Strategy, in.MOHSound, in.MaxWaitTime)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
 }
 
 func (s *Store) DeleteQueueForTenant(ctx context.Context, tid, id uuid.UUID) error {

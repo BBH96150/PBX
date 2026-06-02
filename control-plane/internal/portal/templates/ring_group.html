@@ -25,6 +25,25 @@
       <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Delete ring group</button>
     </form>
   </div>
+  <details style="margin-top:0.6rem">
+    <summary class="muted" style="cursor:pointer">Edit settings</summary>
+    <form method="post" action="/admin/tenants/{{$t.ID}}/ring-groups/{{$rg.ID}}/edit" style="margin-top:0.5rem">
+      <label>Name<input name="name" value="{{$rg.Name}}" required></label>
+      <label>Extension<input name="extension" value="{{$rg.Extension}}" placeholder="200"></label>
+      <label>Strategy
+        <select name="strategy">
+          {{$s := $rg.Strategy}}
+          <option value="simultaneous"{{if eq $s "simultaneous"}} selected{{end}}>simultaneous</option>
+          <option value="sequential"{{if eq $s "sequential"}} selected{{end}}>sequential</option>
+          <option value="round_robin"{{if eq $s "round_robin"}} selected{{end}}>round-robin</option>
+          <option value="random"{{if eq $s "random"}} selected{{end}}>random</option>
+        </select>
+      </label>
+      <label>Ring timeout (sec)<input name="ring_timeout_sec" type="number" value="{{$rg.RingTimeoutSec}}"></label>
+      <label>Caller-ID prefix<input name="caller_id_prefix" value="{{$rg.CallerIDPrefix}}" placeholder="e.g. [Sales]"></label>
+      <button type="submit">Save settings</button>
+    </form>
+  </details>
 </section>
 
 <section class="card" style="margin-top:1rem">
