@@ -90,6 +90,12 @@ jobs:
             docker exec sip-platform-freeswitch-1 fs_cli -x 'eval $${default_password_esl:-ClueCon}' 2>&1 | head -3 || echo "(fs_cli failed)"
             echo "-- global var default_password_esl --"
             docker exec sip-platform-freeswitch-1 fs_cli -x 'global_getvar default_password_esl' 2>&1 | head -3 || echo "(fs_cli failed)"
+            echo "-- FS container healthcheck definition --"
+            docker inspect sip-platform-freeswitch-1 --format '{{json .Config.Healthcheck}}' 2>&1 | head -3 || echo "(none)"
+            echo "-- FS health log (last status) --"
+            docker inspect sip-platform-freeswitch-1 --format '{{json .State.Health}}' 2>&1 | head -c 600; echo
+            echo "-- fs_cli.conf + available liveness tools --"
+            docker exec sip-platform-freeswitch-1 sh -c 'ls -la /etc/fs_cli.conf 2>/dev/null; echo "tools:"; for t in nc pidof curl pgrep ss netstat; do command -v $t >/dev/null 2>&1 && echo "  $t: yes"; done' 2>&1 | head -12 || echo "(exec failed)"
           fi
           if [ "$ROTATE_ESL" = "yes" ]; then
             echo "===== rotate ESL password (values never printed) ====="
