@@ -1,0 +1,65 @@
+{{define "device_content"}}
+{{$t := .Tenant}}
+{{$d := .Device}}
+<div class="row">
+  <h1 style="margin:0">{{$d.MAC}} <span class="muted">— {{$d.Vendor}} {{$d.Model}}</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Device</h2>
+  <table><tbody>
+    <tr><td>MAC</td><td><code>{{$d.MAC}}</code></td></tr>
+    <tr><td>Vendor / Model</td><td>{{$d.Vendor}} {{$d.Model}}</td></tr>
+    {{if $d.Label}}<tr><td>Label</td><td>{{$d.Label}}</td></tr>{{end}}
+    <tr><td>Last provisioned</td><td>{{if $d.LastProvisionedAt}}{{$d.LastProvisionedAt.Format "2006-01-02 15:04"}} {{if $d.LastProvisionedIP}}from <code>{{$d.LastProvisionedIP}}</code>{{end}}{{else}}<span class="muted">never</span>{{end}}</td></tr>
+    <tr><td>RPS</td><td>{{if $d.RPSSyncedAt}}<span class="pill pill-ok">synced</span>{{else if $d.RPSLastError}}<span class="pill pill-warn">{{$d.RPSLastError}}</span>{{else}}<span class="pill">pending</span>{{end}}</td></tr>
+  </tbody></table>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Lines <span class="muted">({{len .Lines}})</span></h2>
+  <p class="muted" style="font-size:0.9rem">Each line key on the phone maps to one extension. The phone fetches this mapping at boot via zero-touch provisioning; a device with no lines returns a 409 until at least one is bound.</p>
+  {{if .Lines}}
+  <table>
+    <thead><tr><th>Line</th><th>Extension</th><th>Label</th><th></th></tr></thead>
+    <tbody>
+      {{range .Lines}}
+      <tr>
+        <td>{{.LineNumber}}</td>
+        <td><code>{{.Extension}}</code>{{if .DisplayName}} — {{.DisplayName}}{{end}}</td>
+        <td>{{if .Label}}{{.Label}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/devices/{{$d.MAC}}/lines/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Unbind this line?')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Unbind</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No lines bound yet — this phone won't provision until you bind at least one.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Bind a line</h2>
+  {{if not .Extensions}}
+    <article class="contrast" style="font-size:0.9rem">No extensions to bind. Create one on the tenant overview first.</article>
+  {{else}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/devices/{{$d.MAC}}/lines">
+    <label>Line number<input name="line_number" type="number" value="1" min="1" max="32" required><small class="muted">Which physical line key on the phone (1 = primary).</small></label>
+    <label>Extension
+      <select name="extension_id" required>
+        {{range .Extensions}}<option value="{{.ID}}">{{.Extension}} — {{.DisplayName}}</option>{{end}}
+      </select>
+    </label>
+    <label>Label (optional)<input name="label" placeholder="Front desk"></label>
+    <button type="submit">Bind line</button>
+  </form>
+  {{end}}
+</section>
+{{end}}

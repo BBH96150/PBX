@@ -90,13 +90,14 @@
     <h2>Devices <span class="muted">({{len .Devices}})</span></h2>
     {{if .Devices}}
     <table>
-      <thead><tr><th>MAC</th><th>Vendor / Model</th><th>RPS</th></tr></thead>
+      <thead><tr><th>MAC</th><th>Vendor / Model</th><th>RPS</th><th></th></tr></thead>
       <tbody>
         {{range .Devices}}
         <tr>
           <td><code>{{.MAC}}</code></td>
           <td>{{.Vendor}} {{.Model}}{{if .Label}} <span class="muted">— {{.Label}}</span>{{end}}</td>
           <td>{{if .RPSSyncedAt}}<span class="pill pill-ok">synced</span>{{else if .RPSLastError}}<span class="pill pill-warn">err</span>{{else}}<span class="pill">pending</span>{{end}}</td>
+          <td><a href="/admin/tenants/{{$t.ID}}/devices/{{.MAC}}">Manage lines →</a></td>
         </tr>
         {{end}}
       </tbody>

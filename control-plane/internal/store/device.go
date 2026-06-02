@@ -11,21 +11,21 @@ import (
 )
 
 type Device struct {
-	MAC                string     `json:"mac"`
-	TenantID           uuid.UUID  `json:"tenant_id"`
-	Vendor             string     `json:"vendor"`
-	Model              string     `json:"model"`
-	Firmware           string     `json:"firmware,omitempty"`
-	ProvisioningToken  string     `json:"provisioning_token,omitempty"`
-	Label              string     `json:"label,omitempty"`
-	LastProvisionedAt  *time.Time `json:"last_provisioned_at,omitempty"`
-	LastProvisionedIP  string     `json:"last_provisioned_ip,omitempty"`
-	UserAgent          string     `json:"user_agent,omitempty"`
+	MAC               string     `json:"mac"`
+	TenantID          uuid.UUID  `json:"tenant_id"`
+	Vendor            string     `json:"vendor"`
+	Model             string     `json:"model"`
+	Firmware          string     `json:"firmware,omitempty"`
+	ProvisioningToken string     `json:"provisioning_token,omitempty"`
+	Label             string     `json:"label,omitempty"`
+	LastProvisionedAt *time.Time `json:"last_provisioned_at,omitempty"`
+	LastProvisionedIP string     `json:"last_provisioned_ip,omitempty"`
+	UserAgent         string     `json:"user_agent,omitempty"`
 	// Task #10 (RPS / true ZTP) sync state.
-	RPSSyncedAt   *time.Time `json:"rps_synced_at,omitempty"`
-	RPSLastError  string     `json:"rps_last_error,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	RPSSyncedAt  *time.Time `json:"rps_synced_at,omitempty"`
+	RPSLastError string     `json:"rps_last_error,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 type DeviceLine struct {
@@ -34,6 +34,57 @@ type DeviceLine struct {
 	LineNumber  int       `json:"line_number"`
 	ExtensionID uuid.UUID `json:"extension_id"`
 	Label       string    `json:"label,omitempty"`
+	// Joined fields populated by detail queries:
+	Extension   string `json:"extension,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+// ListDeviceLinesDetailed returns a device's bound lines with each line's
+// extension number + display name, ordered by line number.
+func (s *Store) ListDeviceLinesDetailed(ctx context.Context, mac string) ([]DeviceLine, error) {
+	normMAC, err := normalizeMAC(mac)
+	if err != nil {
+		return nil, err
+	}
+	const q = `
+		SELECT dl.id, dl.device_mac::text, dl.line_number, dl.extension_id,
+		       COALESCE(dl.label,''), e.extension, COALESCE(e.display_name,'')
+		  FROM device_lines dl
+		  JOIN extensions e ON e.id = dl.extension_id
+		 WHERE dl.device_mac = $1::macaddr
+		 ORDER BY dl.line_number`
+	rows, err := s.DB.Query(ctx, q, normMAC)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeviceLine
+	for rows.Next() {
+		var dl DeviceLine
+		if err := rows.Scan(&dl.ID, &dl.DeviceMAC, &dl.LineNumber, &dl.ExtensionID,
+			&dl.Label, &dl.Extension, &dl.DisplayName); err != nil {
+			return nil, err
+		}
+		out = append(out, dl)
+	}
+	return out, rows.Err()
+}
+
+// DeleteDeviceLineForTenant unbinds a line, scoped to the tenant that owns the
+// device (defense in depth).
+func (s *Store) DeleteDeviceLineForTenant(ctx context.Context, tenantID, lineID uuid.UUID) error {
+	tag, err := s.DB.Exec(ctx, `
+		DELETE FROM device_lines dl
+		 USING devices d
+		 WHERE dl.id = $1 AND dl.device_mac = d.mac AND d.tenant_id = $2`,
+		lineID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNestedNotFound
+	}
+	return nil
 }
 
 var supportedVendors = map[string]bool{
