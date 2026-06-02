@@ -7,9 +7,9 @@
 # starting point for the eventual base-compose reconciliation.
 #
 # It contains NO secrets — every credential is a ${VAR} reference resolved from
-# the box's .env at runtime (the ${VAR:-default} fallbacks shown are the public
-# dev defaults already in the repo's docker-compose.yml). The SAML certs are
-# file-mounted from ./secrets/.
+# the box's .env at runtime. (The live box file uses `${VAR:-<dev-default>}`
+# fallbacks; the dev-default literals are stripped here so secret scanners don't
+# flag this documentation file. The SAML certs are file-mounted from ./secrets/.)
 #
 # HOW IT DIVERGES from the repo's dev docker-compose.yml (and why a blind rsync
 # of the repo base would break or change prod):
@@ -43,7 +43,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-sipplatform}
       POSTGRES_USER: ${POSTGRES_USER:-sip}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sip_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -80,7 +80,7 @@ services:
     volumes:
       - ./kamailio/etc:/etc/kamailio:ro
     environment:
-      DB_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}"
+      DB_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sipplatform}"
       REDIS_URL: "redis://redis:6379"
     depends_on:
       postgres:
@@ -117,13 +117,13 @@ services:
       - "127.0.0.1:8080:8080"   # admin API (internal)
       - "8443:8443"              # provisioning HTTPS (public in prod)
     environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable"
       REDIS_URL: "redis://redis:6379/0"
       CONTROL_PLANE_ADMIN_ADDR: ":8080"
       CONTROL_PLANE_PROVISIONING_ADDR: ":8443"
       ESL_HOST: freeswitch
       ESL_PORT: "8021"
-      ESL_PASSWORD: ${ESL_PASSWORD:-ClueCon}
+      ESL_PASSWORD: ${ESL_PASSWORD}
       PROVISIONING_PUBLIC_HOST: ${PROVISIONING_PUBLIC_HOST:-provision.example.local}
       SIP_PUBLIC_HOST: ${SIP_PUBLIC_HOST:-sip.example.local}
       SIP_PUBLIC_PORT: ${SIP_PUBLIC_PORT:-5060}
@@ -177,7 +177,7 @@ services:
     entrypoint:
       - migrate
       - -path=/migrations
-      - -database=postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable
+      - -database=postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable
     command: ["up"]
     depends_on:
       postgres:

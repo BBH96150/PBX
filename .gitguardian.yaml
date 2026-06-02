@@ -1,0 +1,20 @@
+# GitGuardian / ggshield config.
+#
+# The compose files intentionally carry weak DEV-ONLY default fallbacks
+# (POSTGRES_PASSWORD:-sip_dev, ESL_PASSWORD:-ClueCon) so `docker compose up`
+# works locally without a .env. These are NOT production secrets — prod sets
+# real values in the box's gitignored .env. We ignore secret scanning on these
+# paths so the dev defaults don't generate noise.
+#
+# Real secrets never live in the repo: .env, *.pem, *.key and secrets/ are all
+# gitignored.
+version: 2
+secret:
+  ignored-paths:
+    - "docker-compose.yml"
+    - "deploy/prod-compose.snapshot.yml"
+  ignored-matches:
+    - name: "FreeSWITCH ESL dev default"
+      match: "ClueCon"
+    - name: "Postgres dev default"
+      match: "sip_dev"
