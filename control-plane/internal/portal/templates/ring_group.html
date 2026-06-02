@@ -1,0 +1,64 @@
+{{define "ring_group_content"}}
+{{$t := .Tenant}}
+{{$rg := .RingGroup}}
+<div class="row">
+  <h1 style="margin:0">{{$rg.Name}} <span class="muted">— ring group</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Settings</h2>
+  <table><tbody>
+    <tr><td>Extension</td><td>{{if $rg.Extension}}<code>{{$rg.Extension}}</code>{{else}}<span class="muted">none (DID-only)</span>{{end}}</td></tr>
+    <tr><td>Strategy</td><td><span class="pill">{{$rg.Strategy}}</span></td></tr>
+    <tr><td>Ring timeout</td><td>{{$rg.RingTimeoutSec}}s</td></tr>
+  </tbody></table>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Members <span class="muted">({{len .Members}})</span></h2>
+  <p class="muted" style="font-size:0.9rem">Extensions that ring when a call reaches this group. For <code>sequential</code>/<code>round-robin</code>, lower priority rings first.</p>
+  {{if .Members}}
+  <table>
+    <thead><tr><th>Extension</th><th>Priority</th><th>Ring delay</th><th>State</th><th></th></tr></thead>
+    <tbody>
+      {{range .Members}}
+      <tr>
+        <td><code>{{.Extension}}</code>{{if .DisplayName}} — {{.DisplayName}}{{end}}</td>
+        <td>{{.Priority}}</td>
+        <td>{{.RingDelaySec}}s</td>
+        <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/ring-groups/{{$rg.ID}}/members/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Remove this member?')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No members yet — a ring group with no members can't ring anyone.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a member</h2>
+  {{if not .Extensions}}
+    <article class="contrast" style="font-size:0.9rem">No extensions to add. Create one on the tenant overview first.</article>
+  {{else}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/ring-groups/{{$rg.ID}}/members">
+    <label>Extension
+      <select name="extension_id" required>
+        {{range .Extensions}}<option value="{{.ID}}">{{.Extension}} — {{.DisplayName}}</option>{{end}}
+      </select>
+    </label>
+    <label>Priority<input name="priority" type="number" value="100"><small class="muted">Lower rings earlier (sequential / round-robin).</small></label>
+    <label>Ring delay (sec)<input name="ring_delay_sec" type="number" value="0" min="0" max="60"></label>
+    <button type="submit">Add member</button>
+  </form>
+  {{end}}
+</section>
+{{end}}

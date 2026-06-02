@@ -9,42 +9,43 @@ import (
 )
 
 type RingGroup struct {
-	ID              uuid.UUID  `json:"id"`
-	TenantID        uuid.UUID  `json:"tenant_id"`
-	Extension       string     `json:"extension,omitempty"`
-	Name            string     `json:"name"`
-	Strategy        string     `json:"strategy"`
-	RingTimeoutSec  int        `json:"ring_timeout_sec"`
-	FallbackKind    string     `json:"fallback_kind,omitempty"`
-	FallbackID      *uuid.UUID `json:"fallback_id,omitempty"`
-	CallerIDPrefix  string     `json:"caller_id_prefix,omitempty"`
-	Enabled         bool       `json:"enabled"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID             uuid.UUID  `json:"id"`
+	TenantID       uuid.UUID  `json:"tenant_id"`
+	Extension      string     `json:"extension,omitempty"`
+	Name           string     `json:"name"`
+	Strategy       string     `json:"strategy"`
+	RingTimeoutSec int        `json:"ring_timeout_sec"`
+	FallbackKind   string     `json:"fallback_kind,omitempty"`
+	FallbackID     *uuid.UUID `json:"fallback_id,omitempty"`
+	CallerIDPrefix string     `json:"caller_id_prefix,omitempty"`
+	Enabled        bool       `json:"enabled"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type RingGroupMember struct {
-	ID            uuid.UUID `json:"id"`
-	RingGroupID   uuid.UUID `json:"ring_group_id"`
-	ExtensionID   uuid.UUID `json:"extension_id"`
-	Priority      int       `json:"priority"`
-	RingDelaySec  int       `json:"ring_delay_sec"`
-	Enabled       bool      `json:"enabled"`
-	// Joined fields populated by routing queries:
+	ID           uuid.UUID `json:"id"`
+	RingGroupID  uuid.UUID `json:"ring_group_id"`
+	ExtensionID  uuid.UUID `json:"extension_id"`
+	Priority     int       `json:"priority"`
+	RingDelaySec int       `json:"ring_delay_sec"`
+	Enabled      bool      `json:"enabled"`
+	// Joined fields populated by routing/detail queries:
 	SIPUsername string `json:"sip_username,omitempty"`
 	SIPDomain   string `json:"sip_domain,omitempty"`
 	Extension   string `json:"extension,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 type CreateRingGroupInput struct {
-	TenantID         uuid.UUID
-	Extension        string
-	Name             string
-	Strategy         string // default "simultaneous" if blank
-	RingTimeoutSec   int    // default 30 if 0
-	FallbackKind     string
-	FallbackID       *uuid.UUID
-	CallerIDPrefix   string
+	TenantID       uuid.UUID
+	Extension      string
+	Name           string
+	Strategy       string // default "simultaneous" if blank
+	RingTimeoutSec int    // default 30 if 0
+	FallbackKind   string
+	FallbackID     *uuid.UUID
+	CallerIDPrefix string
 }
 
 func (s *Store) CreateRingGroup(ctx context.Context, in CreateRingGroupInput) (*RingGroup, error) {

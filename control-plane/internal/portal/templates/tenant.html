@@ -127,10 +127,10 @@
     <h2>Ring groups <span class="muted">({{len .RingGroups}})</span></h2>
     {{if .RingGroups}}
     <table>
-      <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th></tr></thead>
+      <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th><th></th></tr></thead>
       <tbody>
         {{range .RingGroups}}
-        <tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td></tr>
+        <tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td><td><a href="/admin/tenants/{{$t.ID}}/ring-groups/{{.ID}}">Manage members →</a></td></tr>
         {{end}}
       </tbody>
     </table>
@@ -156,8 +156,8 @@
     <h2>IVRs <span class="muted">({{len .IVRs}})</span></h2>
     {{if .IVRs}}
     <table>
-      <thead><tr><th>Ext</th><th>Name</th></tr></thead>
-      <tbody>{{range .IVRs}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td></tr>{{end}}</tbody>
+      <thead><tr><th>Ext</th><th>Name</th><th></th></tr></thead>
+      <tbody>{{range .IVRs}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td><a href="/admin/tenants/{{$t.ID}}/ivrs/{{.ID}}">Manage menu →</a></td></tr>{{end}}</tbody>
     </table>
     {{end}}
     <details><summary>Add IVR</summary>
@@ -173,8 +173,8 @@
     <h2>Queues <span class="muted">({{len .Queues}})</span></h2>
     {{if .Queues}}
     <table>
-      <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th></tr></thead>
-      <tbody>{{range .Queues}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td></tr>{{end}}</tbody>
+      <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th><th></th></tr></thead>
+      <tbody>{{range .Queues}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td><td><a href="/admin/tenants/{{$t.ID}}/queues/{{.ID}}">Manage agents →</a></td></tr>{{end}}</tbody>
     </table>
     {{end}}
     <details><summary>Add queue</summary>

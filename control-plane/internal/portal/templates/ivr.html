@@ -1,0 +1,74 @@
+{{define "ivr_content"}}
+{{$t := .Tenant}}
+{{$ivr := .IVR}}
+<div class="row">
+  <h1 style="margin:0">{{$ivr.Name}} <span class="muted">— IVR menu</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Settings</h2>
+  <table><tbody>
+    <tr><td>Extension</td><td>{{if $ivr.Extension}}<code>{{$ivr.Extension}}</code>{{else}}<span class="muted">none (DID-only)</span>{{end}}</td></tr>
+    <tr><td>Digit length</td><td>{{$ivr.DigitLen}}</td></tr>
+    <tr><td>Timeout</td><td>{{$ivr.TimeoutMS}}ms</td></tr>
+  </tbody></table>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Menu options <span class="muted">({{len .Options}})</span></h2>
+  <p class="muted" style="font-size:0.9rem">What happens when the caller presses each digit.</p>
+  {{if .Options}}
+  <table>
+    <thead><tr><th>Digit</th><th>Label</th><th>Goes to</th><th></th></tr></thead>
+    <tbody>
+      {{range .Options}}
+      <tr>
+        <td><code>{{.Digit}}</code></td>
+        <td>{{if .Label}}{{.Label}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td><span class="pill">{{.ActionKind}}</span> {{$lbl := index $.RowTarget .ID}}{{if $lbl}}{{$lbl}}{{else if .ActionID}}<code>{{.ActionID}}</code>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/ivrs/{{$ivr.ID}}/options/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Remove this option?')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No options yet.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add an option</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/ivrs/{{$ivr.ID}}/options">
+    <label>Digit(s) the caller presses
+      <input name="digit" placeholder="1" required pattern="[0-9*#]+">
+    </label>
+    <label>Label (optional)
+      <input name="label" placeholder="Sales">
+    </label>
+    <label>Goes to
+      <select name="action" required>
+        {{range .DestGroups}}
+        <optgroup label="{{.Heading}}">
+          {{range .Options}}<option value="{{.Key}}">{{.Label}}</option>{{end}}
+        </optgroup>
+        {{end}}
+        <optgroup label="Other">
+          <option value="dial_e164">Dial an external number…</option>
+          <option value="hangup">Hang up</option>
+        </optgroup>
+      </select>
+    </label>
+    <label>External number (only for "Dial an external number")
+      <input name="action_data" placeholder="+14155551234">
+    </label>
+    <button type="submit">Add option</button>
+  </form>
+</section>
+{{end}}

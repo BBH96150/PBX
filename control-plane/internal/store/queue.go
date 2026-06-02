@@ -8,49 +8,52 @@ import (
 )
 
 type Queue struct {
-	ID                          uuid.UUID `json:"id"`
-	TenantID                    uuid.UUID `json:"tenant_id"`
-	Extension                   string    `json:"extension,omitempty"`
-	Name                        string    `json:"name"`
-	Strategy                    string    `json:"strategy"`
-	MOHSound                    string    `json:"moh_sound"`
-	RecordTemplate              string    `json:"record_template,omitempty"`
-	TimeBaseScore               string    `json:"time_base_score"`
-	MaxWaitTime                 int       `json:"max_wait_time"`
-	MaxWaitNoAgent              int       `json:"max_wait_no_agent"`
-	MaxWaitNoAgentTimeReached   int       `json:"max_wait_no_agent_time_reached"`
-	TierRulesApply              bool      `json:"tier_rules_apply"`
-	TierRuleWaitSecond          int       `json:"tier_rule_wait_second"`
-	TierRuleNoAgentNoWait       bool      `json:"tier_rule_no_agent_no_wait"`
-	DiscardAbandonedAfter       int       `json:"discard_abandoned_after"`
-	AbandonedResumeAllowed      bool      `json:"abandoned_resume_allowed"`
-	AnnounceSound               string    `json:"announce_sound,omitempty"`
-	Enabled                     bool      `json:"enabled"`
-	CreatedAt                   time.Time `json:"created_at"`
-	UpdatedAt                   time.Time `json:"updated_at"`
+	ID                        uuid.UUID `json:"id"`
+	TenantID                  uuid.UUID `json:"tenant_id"`
+	Extension                 string    `json:"extension,omitempty"`
+	Name                      string    `json:"name"`
+	Strategy                  string    `json:"strategy"`
+	MOHSound                  string    `json:"moh_sound"`
+	RecordTemplate            string    `json:"record_template,omitempty"`
+	TimeBaseScore             string    `json:"time_base_score"`
+	MaxWaitTime               int       `json:"max_wait_time"`
+	MaxWaitNoAgent            int       `json:"max_wait_no_agent"`
+	MaxWaitNoAgentTimeReached int       `json:"max_wait_no_agent_time_reached"`
+	TierRulesApply            bool      `json:"tier_rules_apply"`
+	TierRuleWaitSecond        int       `json:"tier_rule_wait_second"`
+	TierRuleNoAgentNoWait     bool      `json:"tier_rule_no_agent_no_wait"`
+	DiscardAbandonedAfter     int       `json:"discard_abandoned_after"`
+	AbandonedResumeAllowed    bool      `json:"abandoned_resume_allowed"`
+	AnnounceSound             string    `json:"announce_sound,omitempty"`
+	Enabled                   bool      `json:"enabled"`
+	CreatedAt                 time.Time `json:"created_at"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }
 
 type QueueAgent struct {
-	ID                  uuid.UUID `json:"id"`
-	QueueID             uuid.UUID `json:"queue_id"`
-	ExtensionID         uuid.UUID `json:"extension_id"`
-	AgentType           string    `json:"agent_type"`
-	TierLevel           int       `json:"tier_level"`
-	TierPosition        int       `json:"tier_position"`
-	MaxNoAnswer         int       `json:"max_no_answer"`
-	WrapUpTime          int       `json:"wrap_up_time"`
-	RejectDelayTime     int       `json:"reject_delay_time"`
-	BusyDelayTime       int       `json:"busy_delay_time"`
-	NoAnswerDelayTime   int       `json:"no_answer_delay_time"`
-	Enabled             bool      `json:"enabled"`
+	ID                uuid.UUID `json:"id"`
+	QueueID           uuid.UUID `json:"queue_id"`
+	ExtensionID       uuid.UUID `json:"extension_id"`
+	AgentType         string    `json:"agent_type"`
+	TierLevel         int       `json:"tier_level"`
+	TierPosition      int       `json:"tier_position"`
+	MaxNoAnswer       int       `json:"max_no_answer"`
+	WrapUpTime        int       `json:"wrap_up_time"`
+	RejectDelayTime   int       `json:"reject_delay_time"`
+	BusyDelayTime     int       `json:"busy_delay_time"`
+	NoAnswerDelayTime int       `json:"no_answer_delay_time"`
+	Enabled           bool      `json:"enabled"`
+	// Joined fields populated by detail queries:
+	Extension   string `json:"extension,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 type CreateQueueInput struct {
-	TenantID  uuid.UUID
-	Extension string
-	Name      string
-	Strategy  string // default longest-idle-agent
-	MOHSound  string // default local_stream://moh
+	TenantID    uuid.UUID
+	Extension   string
+	Name        string
+	Strategy    string // default longest-idle-agent
+	MOHSound    string // default local_stream://moh
 	MaxWaitTime int
 }
 
@@ -293,11 +296,11 @@ func (s *Store) ListCallcenterConfig(ctx context.Context, kamailioTarget string)
 	seenAgents := map[string]bool{}
 	for arows.Next() {
 		var (
-			queueID, extID                                uuid.UUID
-			agentType                                     string
-			tierLevel, tierPos                            int
-			maxNA, wrap, rejectD, busyD, noAnsD           int
-			sipUser, sipDomain                            string
+			queueID, extID                      uuid.UUID
+			agentType                           string
+			tierLevel, tierPos                  int
+			maxNA, wrap, rejectD, busyD, noAnsD int
+			sipUser, sipDomain                  string
 		)
 		if err := arows.Scan(
 			&queueID, &extID, &agentType, &tierLevel, &tierPos,
@@ -439,11 +442,11 @@ func loadFilteredCallcenterConfig(ctx context.Context, s *Store, kamailioTarget,
 	seenAgents := map[string]bool{}
 	for arows.Next() {
 		var (
-			queueID, extID                          uuid.UUID
-			agentType                               string
-			tierLevel, tierPos                      int
-			maxNA, wrap, rejectD, busyD, noAnsD     int
-			sipUser, sipDomain                      string
+			queueID, extID                      uuid.UUID
+			agentType                           string
+			tierLevel, tierPos                  int
+			maxNA, wrap, rejectD, busyD, noAnsD int
+			sipUser, sipDomain                  string
 		)
 		if err := arows.Scan(
 			&queueID, &extID, &agentType, &tierLevel, &tierPos,

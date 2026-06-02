@@ -1,0 +1,66 @@
+{{define "queue_content"}}
+{{$t := .Tenant}}
+{{$q := .Queue}}
+<div class="row">
+  <h1 style="margin:0">{{$q.Name}} <span class="muted">— call queue</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Settings</h2>
+  <table><tbody>
+    <tr><td>Extension</td><td>{{if $q.Extension}}<code>{{$q.Extension}}</code>{{else}}<span class="muted">none (DID-only)</span>{{end}}</td></tr>
+    <tr><td>Strategy</td><td><span class="pill">{{$q.Strategy}}</span></td></tr>
+    <tr><td>Max wait</td><td>{{$q.MaxWaitTime}}s</td></tr>
+  </tbody></table>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Agents <span class="muted">({{len .Agents}})</span></h2>
+  <p class="muted" style="font-size:0.9rem">Extensions that take calls from this queue. Lower tier = answered first; position orders within a tier.</p>
+  {{if .Agents}}
+  <table>
+    <thead><tr><th>Extension</th><th>Tier</th><th>Position</th><th>Wrap-up</th><th>State</th><th></th></tr></thead>
+    <tbody>
+      {{range .Agents}}
+      <tr>
+        <td><code>{{.Extension}}</code>{{if .DisplayName}} — {{.DisplayName}}{{end}}</td>
+        <td>{{.TierLevel}}</td>
+        <td>{{.TierPosition}}</td>
+        <td>{{.WrapUpTime}}s</td>
+        <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/queues/{{$q.ID}}/agents/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Remove this agent?')">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No agents yet — a queue with no agents will hold callers but never connect them.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add an agent</h2>
+  {{if not .Extensions}}
+    <article class="contrast" style="font-size:0.9rem">No extensions to add. Create one on the tenant overview first.</article>
+  {{else}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/queues/{{$q.ID}}/agents">
+    <label>Extension
+      <select name="extension_id" required>
+        {{range .Extensions}}<option value="{{.ID}}">{{.Extension}} — {{.DisplayName}}</option>{{end}}
+      </select>
+    </label>
+    <label>Tier<input name="tier_level" type="number" value="1" min="1"><small class="muted">Lower tier answers first.</small></label>
+    <label>Position<input name="tier_position" type="number" value="1" min="1"></label>
+    <label>Wrap-up (sec)<input name="wrap_up_time" type="number" value="10" min="0"></label>
+    <button type="submit">Add agent</button>
+  </form>
+  {{end}}
+</section>
+{{end}}
