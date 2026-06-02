@@ -1,0 +1,211 @@
+# ⚠️ SNAPSHOT — NOT the live deploy source (yet).
+#
+# This is a verbatim capture (2026-06-01) of the hand-maintained
+# docker-compose.yml that actually runs in production on the Hetzner box
+# (/root/sip-platform/docker-compose.yml). It is committed here to bring prod's
+# compose under version control: a recovery point, a review surface, and the
+# starting point for the eventual base-compose reconciliation.
+#
+# It contains NO secrets — every credential is a ${VAR} reference resolved from
+# the box's .env at runtime (the ${VAR:-default} fallbacks shown are the public
+# dev defaults already in the repo's docker-compose.yml). The SAML certs are
+# file-mounted from ./secrets/.
+#
+# HOW IT DIVERGES from the repo's dev docker-compose.yml (and why a blind rsync
+# of the repo base would break or change prod):
+#   - control-plane uses `image:` (pulled from GHCR), not `build:` — the box has
+#     no source tree to build from.
+#   - SAML uses file-mounted certs (SAML_SP_CERT_FILE / _KEY_FILE point at
+#     /etc/control-plane/saml/*.pem, mounted from ./secrets/), not the env-PEM vars.
+#   - caddy has no `profiles: ["prod"]` gate (it must always run in prod).
+#   - redis publishes an ephemeral host port ("6379") instead of 127.0.0.1:6379:6379.
+#
+# WHAT THIS SNAPSHOT IS MISSING vs the current repo base (latent gaps to fix
+# DURING a supervised cutover — each is a real change, which is why this is not
+# auto-synced):
+#   - SIP_DOMAIN_SUFFIX env on control-plane (drives wildcard sip_domain auto-gen).
+#   - fs-gateways-init one-shot (chowns the gateway volume for the non-root UID).
+#   - freeswitch_storage volume + mounts — currently supplied by the additive
+#     docker-compose.override.yml (synced from docker-compose.prod.yml), so the
+#     effective running config DOES have it.
+#
+# CUTOVER PROCEDURE (do this supervised — see deploy/README.md): reconcile this
+# into repo-controlled base + prod-override files, validate `docker compose
+# config` on the box matches the current effective config, then switch the
+# ci.yml deploy to sync + use them.
+
+name: sip-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sipplatform}
+      POSTGRES_USER: ${POSTGRES_USER:-sip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sip_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sip} -d ${POSTGRES_DB:-sipplatform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kamailio:
+    image: kamailio/kamailio-ci:5.5.2-alpine
+    restart: unless-stopped
+    ports:
+      - "${KAMAILIO_SIP_UDP_PORT:-5060}:5060/udp"
+      - "${KAMAILIO_SIP_TCP_PORT:-5060}:5060/tcp"
+      - "${KAMAILIO_SIP_TLS_PORT:-5061}:5061/tcp"
+      - "${KAMAILIO_WSS_PORT:-7443}:7443/tcp"
+      - "${KAMAILIO_WS_PORT:-5066}:5066/tcp"
+    volumes:
+      - ./kamailio/etc:/etc/kamailio:ro
+    environment:
+      DB_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  freeswitch:
+    image: safarov/freeswitch:latest
+    restart: unless-stopped
+    ports:
+      - "${FS_EXTERNAL_SIP_PORT:-5070}:5070/udp"
+      - "${FS_RTP_START:-16384}-${FS_RTP_END:-16484}:${FS_RTP_START:-16384}-${FS_RTP_END:-16484}/udp"
+    volumes:
+      - ./freeswitch/conf:/etc/freeswitch:ro
+      - fs_dynamic_gateways:/etc/freeswitch/sip_profiles/external/dynamic
+      - freeswitch_recordings:/var/lib/freeswitch/recordings
+      - freeswitch_db:/var/lib/freeswitch/db
+      - fs_logs:/var/log/freeswitch
+    environment:
+      FS_RTP_START: ${FS_RTP_START:-16384}
+      FS_RTP_END: ${FS_RTP_END:-16484}
+      EXT_SIP_IP: ${EXT_SIP_IP:-}
+      EXT_RTP_IP: ${EXT_RTP_IP:-}
+    depends_on:
+      - kamailio
+
+  control-plane:
+    image: ghcr.io/bbh96150/pbx/control-plane:latest
+    # build kept in repo for local dev; prod pulls from GHCR
+    # (handled by ci.yml deploy job)
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # admin API (internal)
+      - "8443:8443"              # provisioning HTTPS (public in prod)
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      CONTROL_PLANE_ADMIN_ADDR: ":8080"
+      CONTROL_PLANE_PROVISIONING_ADDR: ":8443"
+      ESL_HOST: freeswitch
+      ESL_PORT: "8021"
+      ESL_PASSWORD: ${ESL_PASSWORD:-ClueCon}
+      PROVISIONING_PUBLIC_HOST: ${PROVISIONING_PUBLIC_HOST:-provision.example.local}
+      SIP_PUBLIC_HOST: ${SIP_PUBLIC_HOST:-sip.example.local}
+      SIP_PUBLIC_PORT: ${SIP_PUBLIC_PORT:-5060}
+      PORTAL_BASE_URL: ${PORTAL_BASE_URL:-http://localhost:8080}
+      KAMAILIO_SIP_TARGET: kamailio:5060
+      BOOTSTRAP_API_TOKEN: ${BOOTSTRAP_API_TOKEN:-}
+      BOOTSTRAP_USER_EMAIL: ${BOOTSTRAP_USER_EMAIL:-}
+      BOOTSTRAP_USER_PASSWORD: ${BOOTSTRAP_USER_PASSWORD:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-PBX <pbx@example.com>}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SAML_SP_CERT_FILE: /etc/control-plane/saml/cert.pem
+      SAML_SP_KEY_FILE: /etc/control-plane/saml/key.pem
+      POLYCOM_ZTP_API_BASE: ${POLYCOM_ZTP_API_BASE:-}
+      POLYCOM_ZTP_API_TOKEN: ${POLYCOM_ZTP_API_TOKEN:-}
+      POLYCOM_ZTP_PROFILE_ID: ${POLYCOM_ZTP_PROFILE_ID:-}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      SAML_SP_CERT_PEM: ${SAML_SP_CERT_PEM:-}
+      SAML_SP_KEY_PEM: ${SAML_SP_KEY_PEM:-}
+      FS_DYNAMIC_GATEWAY_DIR: /fs-gateways
+    volumes:
+      - fs_dynamic_gateways:/fs-gateways
+      # SAML SP keypair — mounted read-only into the container.
+      - ./secrets/saml-cert.pem:/etc/control-plane/saml/cert.pem:ro
+      - ./secrets/saml-key.pem:/etc/control-plane/saml/key.pem:ro
+      - fs_logs:/fs-logs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  dex:
+    image: dexidp/dex:v2.41.1
+    restart: unless-stopped
+    profiles: ["sso-test"]
+    ports:
+      - "127.0.0.1:5556:5556"
+    volumes:
+      - ./dex/dex-config.yaml:/etc/dex/config.yaml:ro
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+
+  migrate:
+    image: migrate/migrate:latest
+    profiles: ["tools"]
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint:
+      - migrate
+      - -path=/migrations
+      - -database=postgres://${POSTGRES_USER:-sip}:${POSTGRES_PASSWORD:-sip_dev}@postgres:5432/${POSTGRES_DB:-sipplatform}?sslmode=disable
+    command: ["up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Phase A.8 — Caddy reverse proxy + auto LE cert for the admin portal.
+  caddy:
+    image: caddy:2.7-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PORTAL_HOSTNAME: ${PORTAL_HOSTNAME:-pbx.tendpos.com}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - control-plane
+
+volumes:
+  postgres_data:
+  redis_data:
+  freeswitch_recordings:
+  freeswitch_db:
+  fs_dynamic_gateways:
+  fs_logs:
+  caddy_data:
+  caddy_config:
