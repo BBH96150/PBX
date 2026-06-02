@@ -29,6 +29,10 @@ on:
         description: "Type 'yes' to add the freeswitch_storage volume via docker-compose.override.yml (fixes voicemail recordings on prod)."
         required: false
         default: "no"
+      check_env:
+        description: "Type 'yes' to check whether prod .env overrides the compose default credentials (reports status only, never values)."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -54,14 +58,38 @@ jobs:
           RECREATE: ${{ github.event.inputs.recreate }}
           SHOW_COMPOSE: ${{ github.event.inputs.show_compose }}
           APPLY_VM_OVERRIDE: ${{ github.event.inputs.apply_vm_override }}
+          CHECK_ENV: ${{ github.event.inputs.check_env }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
           RECREATE="${3:-no}"
           SHOW_COMPOSE="${4:-no}"
           APPLY_VM_OVERRIDE="${5:-no}"
+          CHECK_ENV="${6:-no}"
+          if [ "$CHECK_ENV" = "yes" ]; then
+            echo "===== credential check (status only, NO values printed) ====="
+            envf=/root/sip-platform/.env
+            chk() {
+              key="$1"; def="$2"
+              line=$(grep -E "^${key}=" "$envf" 2>/dev/null | head -1)
+              val="${line#*=}"
+              if [ -z "$line" ]; then
+                echo "  $key: NOT set in .env -> container falls back to compose default ('$def')  <-- WEAK"
+              elif [ "$val" = "$def" ]; then
+                echo "  $key: set to the well-known default ('$def')  <-- WEAK"
+              else
+                echo "  $key: overridden with a non-default value (len ${#val})  OK"
+              fi
+            }
+            if [ -f "$envf" ]; then
+              chk POSTGRES_PASSWORD sip_dev
+              chk ESL_PASSWORD ClueCon
+            else
+              echo "  (.env not found at $envf — compose defaults would apply)"
+            fi
+          fi
           if [ "$SHOW_COMPOSE" = "yes" ]; then
             echo "===== BEGIN on-box docker-compose.yml ====="
             # Mask only literal secret values (key contains PASSWORD/SECRET/TOKEN/KEY
