@@ -24,7 +24,9 @@ services:
     # default. Replace it with a password-free readiness probe: ESL port 8021
     # accepting a TCP connection means FreeSWITCH is up.
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 8021 || exit 1"]
+      # BusyBox nc has no -z; use netstat to confirm the ESL port is listening
+      # (password-free readiness signal — proven on the box).
+      test: ["CMD-SHELL", "netstat -ltn 2>/dev/null | grep -q ':8021 ' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
