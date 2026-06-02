@@ -91,12 +91,15 @@ jobs:
             fi
             sed -i '/default_password_esl=/d' "$vlf"
             sed -i "s|</include>|  <X-PRE-PROCESS cmd=\"set\" data=\"default_password_esl=$NEW\"/>\n</include>|" "$vlf"
-            echo "updated .env + vars-local.xml; recreating FS + control-plane..."
-            docker compose -p sip-platform up -d freeswitch control-plane >/dev/null 2>&1
+            echo "vars-local.xml default_password_esl lines now: $(grep -c default_password_esl "$vlf")"
+            echo "updated .env + vars-local.xml; force-recreating FS + control-plane..."
+            # --force-recreate so FS actually restarts and re-reads the bind-mounted
+            # vars-local.xml (a plain `up -d` no-ops when the compose config is unchanged).
+            docker compose -p sip-platform up -d --force-recreate freeswitch control-plane >/dev/null 2>&1
             ok=0
-            for i in $(seq 1 10); do
+            for i in $(seq 1 14); do
               sleep 10
-              if docker logs --since 180s sip-platform-control-plane-1 2>&1 | grep -q "esl connected"; then ok=1; break; fi
+              if docker logs --since 200s sip-platform-control-plane-1 2>&1 | grep -q "esl connected"; then ok=1; break; fi
             done
             hz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz || echo 000)
             echo "esl_connected=$ok  healthz=$hz"
@@ -107,8 +110,8 @@ jobs:
               echo "VERIFICATION FAILED — rolling back to previous ESL password."
               cp -a .env.bak.esl .env
               cp -a "$vlf.bak.esl" "$vlf"
-              docker compose -p sip-platform up -d freeswitch control-plane >/dev/null 2>&1
-              sleep 15
+              docker compose -p sip-platform up -d --force-recreate freeswitch control-plane >/dev/null 2>&1
+              sleep 20
               echo "rolled back; healthz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/healthz || echo 000)"
             fi
           fi
