@@ -21,6 +21,10 @@ on:
         description: "Type 'yes' to force-recreate all compose containers so they adopt the log cap (brief downtime)."
         required: false
         default: "no"
+      show_compose:
+        description: "Type 'yes' to print the on-box docker-compose.yml (to diff against the repo)."
+        required: false
+        default: "no"
 
 jobs:
   disk:
@@ -44,12 +48,19 @@ jobs:
           CLEAN: ${{ github.event.inputs.clean }}
           HARDEN: ${{ github.event.inputs.harden }}
           RECREATE: ${{ github.event.inputs.recreate }}
+          SHOW_COMPOSE: ${{ github.event.inputs.show_compose }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
           RECREATE="${3:-no}"
+          SHOW_COMPOSE="${4:-no}"
+          if [ "$SHOW_COMPOSE" = "yes" ]; then
+            echo "===== BEGIN on-box docker-compose.yml ====="
+            sed -e 's/\(PASSWORD[^:=]*[:=]\).*/\1 <redacted>/Ig' -e 's/\(SECRET[^:=]*[:=]\).*/\1 <redacted>/Ig' /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
+            echo "===== END on-box docker-compose.yml ====="
+          fi
           echo "===== containers (id -> name) ====="
           docker ps -a --format '{{.ID}}  {{.Names}}  {{.Image}}  ({{.Status}})' 2>/dev/null || true
           echo "===== recent logs of restarting/unhealthy containers ====="
