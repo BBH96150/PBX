@@ -28,6 +28,22 @@ this instead of the console.
 `.github/workflows/monitor.yml` (scheduled, every 30 min) checks disk %,
 container health, and `/healthz`; a failed run emails repo admins.
 
+### Credentials / ESL
+
+`ops-disk.yml -f check_env=yes` reports (status only, never values) whether the
+box's `.env` overrides the weak compose defaults. Prod uses a strong
+`POSTGRES_PASSWORD` and (since 2026-06-02) a rotated `ESL_PASSWORD`.
+
+The FreeSWITCH ESL password lives as a **literal** in the box's
+`freeswitch/conf/autoload_configs/event_socket.conf.xml` (the `$${var:-default}`
+form FS provides isn't reliable) and as `ESL_PASSWORD` in `.env` (the
+control-plane connects with that). Rotate both atomically with
+`ops-disk.yml -f rotate_esl=yes` — it generates a fresh secret, updates both,
+force-recreates FS + control-plane, verifies the control-plane reconnects, and
+auto-rolls-back if not. The FS container healthcheck is overridden to a
+password-free netstat probe (`docker-compose.prod.yml`) so rotation doesn't
+flap the health status.
+
 ## Base-compose reconciliation (pending, do supervised)
 
 Goal: make the base compose repo-controlled so changes deploy automatically,

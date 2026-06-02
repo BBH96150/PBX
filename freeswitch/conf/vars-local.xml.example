@@ -14,10 +14,11 @@
   <X-PRE-PROCESS cmd="set" data="cc_realm=callcentric.com"/>
   <X-PRE-PROCESS cmd="set" data="cc_proxy=callcentric.com"/>
 
-  <!-- ESL listener password. event_socket.conf.xml reads
-       $${default_password_esl:-ClueCon}; set a STRONG value here in prod and
-       the SAME value as ESL_PASSWORD in .env (the control-plane connects with
-       that). Leaving this unset falls back to the well-known default ClueCon —
-       fine for local dev, NOT for production. -->
-  <X-PRE-PROCESS cmd="set" data="default_password_esl=replace-with-strong-secret"/>
+  <!-- ESL listener password: in PRODUCTION do NOT run on the default ClueCon.
+       NOTE: FS's $${var:-default} expansion does not reliably pick up a value
+       set here, so prod sets the password as a LITERAL directly in
+       autoload_configs/event_socket.conf.xml (and the SAME value as
+       ESL_PASSWORD in .env, which the control-plane connects with). This is
+       automated by the `rotate_esl` input of .github/workflows/ops-disk.yml,
+       which also keeps the container healthcheck password-free. -->
 </include>
