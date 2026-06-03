@@ -28,6 +28,24 @@ this instead of the console.
 `.github/workflows/monitor.yml` (scheduled, every 30 min) checks disk %,
 container health, and `/healthz`; a failed run emails repo admins.
 
+### Security posture (audited 2026-06-03)
+
+- **Firewall:** `ufw` is active with a default-deny allowlist — only SSH (22),
+  SIP/RTP (5060, 5066, 5070, 16384:16484) and Caddy (80/443) are open. Run
+  `ops-disk.yml -f audit_net=yes` to re-audit listening ports + firewall.
+- **Redis:** now bound to `127.0.0.1:6379` (was published to `0.0.0.0` on a
+  random port — ufw-blocked, but a single point of failure; fixed via
+  `ops-disk.yml -f fix_redis_bind=yes`).
+- **Go stdlib:** toolchain pinned to 1.25.11 (patches GO-2026-5039 / 5037).
+- **ESL:** rotated off the default `ClueCon` (see below).
+- **OPEN RECOMMENDATION — provisioning auth:** the provisioning server (`:8443`)
+  serves device configs (which contain SIP credentials) **by MAC alone, no
+  token**. Currently mitigated because `8443` is ufw-blocked (not internet-
+  reachable). Before exposing provisioning for over-the-internet ZTP, gate the
+  config fetch on the per-device `provisioning_token` and propagate it through
+  the RPS redirect — needs testing against real handsets, so it wasn't changed
+  blind.
+
 ### Credentials / ESL
 
 `ops-disk.yml -f check_env=yes` reports (status only, never values) whether the
