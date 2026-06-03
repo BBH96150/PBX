@@ -64,6 +64,7 @@
         {{end}}
       </tbody>
     </table>
+    {{if .Extensions}}<p style="margin:0.5rem 0 0"><a href="/admin/tenants/{{$t.ID}}/extensions.csv" class="btn-sm muted">⬇ Export CSV</a></p>{{end}}
     {{end}}
     <details><summary>Add extension</summary>
       <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/extensions">

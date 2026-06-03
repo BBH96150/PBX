@@ -218,6 +218,7 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/recording/delete", s.cdrRecordingDelete)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
 		r.Post("/tenants/{tenantID}/moh", s.tenantSetMoH)
+		r.Get("/tenants/{tenantID}/extensions.csv", s.tenantExtensionsCSV)
 		r.Post("/tenants/{tenantID}/extensions", s.createExtension)
 		r.Post("/tenants/{tenantID}/extensions/bulk", s.bulkCreateExtensions)
 		r.Post("/tenants/{tenantID}/devices", s.createDevice)
@@ -1061,6 +1062,34 @@ func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
 			c.CallerIDNum, c.CallerIDName, intStr(c.DurationSec), intStr(c.BillableSec),
 			disp, c.HangupCause,
 		})
+	}
+	cw.Flush()
+}
+
+// tenantExtensionsCSV streams the tenant's active extensions as a CSV — a
+// provisioning sheet for onboarding (numbers, names, SIP usernames; no secrets).
+func (s *Server) tenantExtensionsCSV(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.store.GetTenant(r.Context(), tid); err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	exts := mustExtensions(r.Context(), s.store, tid)
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="extensions.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"extension", "display_name", "sip_username", "voicemail", "dnd", "recording"})
+	yn := func(b bool) string {
+		if b {
+			return "yes"
+		}
+		return "no"
+	}
+	for _, e := range exts {
+		_ = cw.Write([]string{e.Extension, e.DisplayName, e.SIPUsername, yn(e.VoicemailEnabled), yn(e.DoNotDisturb), yn(e.RecordingEnabled)})
 	}
 	cw.Flush()
 }
