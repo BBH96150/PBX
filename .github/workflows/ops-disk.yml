@@ -41,6 +41,10 @@ on:
         description: "Type 'yes' for a read-only ESL diagnosis (current connection state + how FS resolves the password expression). No restart."
         required: false
         default: "no"
+      audit_net:
+        description: "Type 'yes' for a read-only network-exposure audit (host listening ports + firewall). No changes."
+        required: false
+        default: "no"
       compose_apply:
         description: "Type 'yes' to run `docker compose up -d` on the box (applies the synced override; recreates only services whose config changed)."
         required: false
@@ -74,8 +78,9 @@ jobs:
           ROTATE_ESL: ${{ github.event.inputs.rotate_esl }}
           DIAG_ESL: ${{ github.event.inputs.diag_esl }}
           COMPOSE_APPLY: ${{ github.event.inputs.compose_apply }}
+          AUDIT_NET: ${{ github.event.inputs.audit_net }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -86,6 +91,19 @@ jobs:
           ROTATE_ESL="${7:-no}"
           DIAG_ESL="${8:-no}"
           COMPOSE_APPLY="${9:-no}"
+          AUDIT_NET="${10:-no}"
+          if [ "$AUDIT_NET" = "yes" ]; then
+            echo "===== network exposure (read-only) ====="
+            echo "-- host LISTEN sockets (non-loopback are internet-reachable unless firewalled) --"
+            ss -tlnH 2>/dev/null | awk '{print $4}' | sort -u || netstat -ltn 2>/dev/null
+            echo "-- udp listeners --"
+            ss -ulnH 2>/dev/null | awk '{print $4}' | sort -u | head -20 || true
+            echo "-- ufw --"
+            ufw status 2>/dev/null | head -20 || echo "(ufw not installed/active)"
+            echo "-- iptables INPUT policy + rule count --"
+            iptables -S INPUT 2>/dev/null | head -5 || echo "(no iptables access)"
+            echo "-- public cloud firewall is Hetzner-side (not visible here) --"
+          fi
           if [ "$COMPOSE_APPLY" = "yes" ]; then
             echo "===== docker compose up -d (apply synced override) ====="
             cd /root/sip-platform || { echo "no project dir"; exit 1; }
