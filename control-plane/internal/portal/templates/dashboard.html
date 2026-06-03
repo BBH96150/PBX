@@ -37,4 +37,25 @@
   </table>
   {{else}}<p class="empty">No tenants yet — create your first one above.</p>{{end}}
 </section>
+
+{{if .RecentCalls}}
+<section class="card" style="margin-top:1rem">
+  <h2>Recent activity</h2>
+  <table>
+    <thead><tr><th>When</th><th>Workspace</th><th>Dir</th><th>From</th><th>To</th><th>Dur</th></tr></thead>
+    <tbody>
+      {{range .RecentCalls}}
+      <tr>
+        <td class="muted">{{.StartedAt.Format "Jan 2, 15:04"}}</td>
+        <td>{{if .TenantID}}<a href="/admin/tenants/{{.TenantID}}/cdrs">{{.TenantName}}</a>{{else}}<span class="muted">{{.TenantName}}</span>{{end}}</td>
+        <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔ int</span>{{end}}</td>
+        <td><code>{{.CallerIDNum}}</code></td>
+        <td><code>{{.ToURI}}</code></td>
+        <td>{{humandur .DurationSec}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
 {{end}}

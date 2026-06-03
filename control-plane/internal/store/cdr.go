@@ -72,6 +72,50 @@ func (s *Store) ListCDRsForTenant(ctx context.Context, tenantID uuid.UUID, limit
 	return out, rows.Err()
 }
 
+// RecentCDR is a compact CDR row joined with its tenant name, for the
+// platform dashboard's recent-activity feed.
+type RecentCDR struct {
+	TenantID    *uuid.UUID
+	TenantName  string
+	Direction   string
+	CallerIDNum string
+	ToURI       string
+	StartedAt   time.Time
+	DurationSec *int
+	Disposition *string
+}
+
+// ListRecentCDRs returns the most recent calls across all tenants, or scoped to
+// one tenant when scope is non-nil. Used by the dashboard activity feed.
+func (s *Store) ListRecentCDRs(ctx context.Context, scope *uuid.UUID, limit int) ([]RecentCDR, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+	const q = `
+		SELECT c.tenant_id, COALESCE(t.name,'—'), c.direction,
+		       COALESCE(c.caller_id_num,''), c.to_uri, c.started_at,
+		       c.duration_sec, c.disposition
+		  FROM cdrs c
+		  LEFT JOIN tenants t ON t.id = c.tenant_id
+		 WHERE ($1::uuid IS NULL OR c.tenant_id = $1)
+		 ORDER BY c.started_at DESC LIMIT $2`
+	rows, err := s.DB.Query(ctx, q, scope, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RecentCDR
+	for rows.Next() {
+		var c RecentCDR
+		if err := rows.Scan(&c.TenantID, &c.TenantName, &c.Direction,
+			&c.CallerIDNum, &c.ToURI, &c.StartedAt, &c.DurationSec, &c.Disposition); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // CDRFilter narrows a CDR query. Empty/nil fields are ignored.
 type CDRFilter struct {
 	Direction string     // "" = all; else inbound|outbound|internal
