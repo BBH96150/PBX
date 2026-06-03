@@ -1026,6 +1026,21 @@ func cdrFilterFromQuery(q url.Values, limit int) store.CDRFilter {
 	return f
 }
 
+// csvSafe neutralizes spreadsheet formula injection: a cell beginning with
+// = + - @ (or a leading tab/CR) is treated as a formula by Excel/Sheets. Some
+// CSV fields (e.g. inbound caller-ID name) are attacker-influenced, so prefix
+// such values with a single quote so they render as literal text.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
 // tenantCDRsCSV streams the filtered call log as a CSV download.
 func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
@@ -1058,9 +1073,9 @@ func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
 			disp = *c.Disposition
 		}
 		_ = cw.Write([]string{
-			c.StartedAt.UTC().Format(time.RFC3339), c.Direction, c.FromURI, c.ToURI,
-			c.CallerIDNum, c.CallerIDName, intStr(c.DurationSec), intStr(c.BillableSec),
-			disp, c.HangupCause,
+			c.StartedAt.UTC().Format(time.RFC3339), c.Direction, csvSafe(c.FromURI), csvSafe(c.ToURI),
+			csvSafe(c.CallerIDNum), csvSafe(c.CallerIDName), intStr(c.DurationSec), intStr(c.BillableSec),
+			disp, csvSafe(c.HangupCause),
 		})
 	}
 	cw.Flush()
@@ -1089,7 +1104,7 @@ func (s *Server) tenantExtensionsCSV(w http.ResponseWriter, r *http.Request) {
 		return "no"
 	}
 	for _, e := range exts {
-		_ = cw.Write([]string{e.Extension, e.DisplayName, e.SIPUsername, yn(e.VoicemailEnabled), yn(e.DoNotDisturb), yn(e.RecordingEnabled)})
+		_ = cw.Write([]string{csvSafe(e.Extension), csvSafe(e.DisplayName), csvSafe(e.SIPUsername), yn(e.VoicemailEnabled), yn(e.DoNotDisturb), yn(e.RecordingEnabled)})
 	}
 	cw.Flush()
 }
