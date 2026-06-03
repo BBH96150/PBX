@@ -19,7 +19,13 @@
 </div>
 
 <section class="card">
-  <h2>Workspaces</h2>
+  <div class="row">
+    <h2 style="margin:0;border:0;padding:0">Workspaces</h2>
+    <form method="get" action="/admin/" class="inline" style="margin:0">
+      <input name="q" value="{{.Search}}" placeholder="Search name or slug" style="margin:0;min-width:14rem" autocomplete="off">
+      {{if .Search}}<a href="/admin/" role="button" class="secondary btn-sm">Clear</a>{{end}}
+    </form>
+  </div>
   {{if .Tenants}}
   <table>
     <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Ext</th><th>Numbers</th><th>Created</th><th></th></tr></thead>
@@ -38,6 +44,7 @@
       {{end}}
     </tbody>
   </table>
+  {{else if .Search}}<p class="empty">No workspaces match “{{.Search}}”.</p>
   {{else}}<p class="empty">No tenants yet — create your first one above.</p>{{end}}
 </section>
 

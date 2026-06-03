@@ -716,6 +716,18 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		tenants = filtered
 	}
+	// Optional workspace filter (?q=) — substring match on name or slug.
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	if search != "" {
+		needle := strings.ToLower(search)
+		var matched []store.Tenant
+		for _, t := range tenants {
+			if strings.Contains(strings.ToLower(t.Name), needle) || strings.Contains(strings.ToLower(t.Slug), needle) {
+				matched = append(matched, t)
+			}
+		}
+		tenants = matched
+	}
 	var scope *uuid.UUID
 	if tok := tokenFromCtx(r.Context()); tok != nil && tok.TenantID != nil {
 		scope = tok.TenantID
@@ -732,6 +744,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		"Stats":       stats,
 		"RecentCalls": recent,
 		"Counts":      counts,
+		"Search":      search,
 	})
 }
 
