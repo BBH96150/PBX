@@ -222,7 +222,7 @@ jobs:
             # values) and file paths. Needed byte-exact for the base-compose
             # cutover. A guard refuses to print if any non-${ assignment to a
             # secret-like key is found (would indicate an unexpected literal).
-            if grep -nE '(PASSWORD|SECRET|TOKEN|_KEY)[A-Za-z_]*[[:space:]]*[:=][[:space:]]*[^$#[:space:]]' /root/sip-platform/docker-compose.yml >/dev/null 2>&1; then
+            if grep -nE '(PASSWORD|SECRET|TOKEN|_KEY)[A-Za-z_]*[[:space:]]*[:=][[:space:]]*[^$#/[:space:]]' /root/sip-platform/docker-compose.yml >/dev/null 2>&1; then
               echo "REFUSING: a literal secret-like value was found; not printing."
             else
               cat /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
