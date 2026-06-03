@@ -5,33 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} · SIP Platform</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/admin/static/app.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <style>
-    :root { --pico-spacing: 0.85rem; }
-    body { padding: 0; }
-    nav { padding: 0.5rem 1.25rem; background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-muted-border-color); }
-    nav ul { margin: 0; }
-    nav strong { font-weight: 600; }
-    main { padding: 1rem 1.25rem 3rem; max-width: 80rem; margin: 0 auto; }
-    .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; }
-    section.card { padding: 1rem 1.25rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: 0.5rem; }
-    section.card h2 { font-size: 1.05rem; margin: 0 0 0.5rem; display: flex; align-items: baseline; justify-content: space-between; }
-    table { font-size: 0.92rem; }
-    .muted { color: var(--pico-muted-color); font-size: 0.85rem; }
-    .pill { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 0.4rem; background: var(--pico-secondary-background); font-size: 0.78rem; }
-    .pill-ok { background: #b8e3b6; color: #224; }
-    .pill-warn { background: #f4d9a3; color: #553; }
-    details { margin-top: 0.5rem; }
-    summary { cursor: pointer; font-size: 0.92rem; }
-    form.inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.5rem 0.75rem; align-items: end; margin-top: 0.5rem; }
-    form.inline label { font-size: 0.82rem; margin: 0; }
-    form.inline input, form.inline select { margin: 0; }
-    form.inline button { margin: 0; padding: 0.4rem 0.75rem; }
-    code { font-size: 0.84rem; }
-    .err { color: var(--pico-color-red-550); }
-    .ok { color: var(--pico-color-jade-550); }
-  </style>
 </head>
 <body>
 <nav>

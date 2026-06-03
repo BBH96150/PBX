@@ -31,6 +31,9 @@ import (
 //go:embed templates/*.html
 var tmplFS embed.FS
 
+//go:embed static/app.css
+var staticFS embed.FS
+
 const cookieName = "sip_admin_token"
 
 type Server struct {
@@ -150,6 +153,18 @@ func (s *Server) dyntemplate(name string, data any) (template.HTML, error) {
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
+
+	// Served stylesheet (public — the login page needs it too).
+	r.Get("/static/app.css", func(w http.ResponseWriter, _ *http.Request) {
+		b, err := staticFS.ReadFile("static/app.css")
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(b)
+	})
 
 	r.Get("/login", s.handleLogin)
 	r.Post("/login", s.handleLoginPost)

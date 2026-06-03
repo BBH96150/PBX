@@ -1,0 +1,148 @@
+/* SIP Platform admin — design layer on top of Pico.css v2.
+   Goals: cohesive spacing, dark-mode-safe status colors, a real top bar with
+   tabs, compact tables, consistent buttons/badges, tidy forms. Keeps the
+   historical class names (card, pill, pill-ok, muted, row, grid-2, form.inline)
+   so existing templates keep working. */
+
+:root {
+  --pico-spacing: 0.8rem;
+  --pico-border-radius: 0.55rem;
+  --pico-font-size: 100%;
+  --app-accent: #5b71f5;
+  --app-accent-fg: #fff;
+  --app-radius: 0.6rem;
+  --app-gap: 1rem;
+  --app-line: var(--pico-muted-border-color);
+}
+
+/* Slightly tighter, more "app" typography. */
+body { padding: 0; font-size: 0.95rem; }
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.1rem; }
+h3 { font-size: 0.98rem; }
+a { text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- top bar ---------- */
+body > nav {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: 0.55rem 1.25rem;
+  background: var(--pico-card-background-color);
+  border-bottom: 1px solid var(--app-line);
+  backdrop-filter: saturate(1.2) blur(4px);
+}
+body > nav ul { margin: 0; padding: 0; display: flex; align-items: center; gap: 0.25rem; list-style: none; }
+body > nav ul li { padding: 0; margin: 0; }
+body > nav strong { font-weight: 700; letter-spacing: -0.01em; margin-right: 0.5rem; }
+body > nav a {
+  padding: 0.35rem 0.6rem; border-radius: 0.45rem; color: var(--pico-color);
+  font-size: 0.9rem; font-weight: 500;
+}
+body > nav a:hover { background: var(--pico-secondary-background); text-decoration: none; }
+
+main { padding: 1.25rem 1.25rem 4rem; max-width: 82rem; margin: 0 auto; }
+
+/* ---------- page header row ---------- */
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.row h1 { letter-spacing: -0.02em; }
+
+/* secondary tab/subnav under a page title */
+.subnav { display: flex; flex-wrap: wrap; gap: 0.15rem; margin: 0.6rem 0 0.25rem; }
+.subnav a {
+  padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.85rem; font-weight: 500;
+  color: var(--pico-muted-color);
+}
+.subnav a:hover { background: var(--pico-secondary-background); color: var(--pico-color); text-decoration: none; }
+.subnav a.active { background: var(--app-accent); color: var(--app-accent-fg); }
+
+/* ---------- cards & layout ---------- */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--app-gap); }
+section.card, .card {
+  padding: 1.05rem 1.2rem;
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-card-border-color);
+  border-radius: var(--app-radius);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+section.card h2, .card h2 {
+  font-size: 1.02rem; margin: 0 0 0.6rem; padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--app-line);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+}
+section.card h3 { font-size: 0.95rem; margin: 0.9rem 0 0.4rem; }
+
+/* ---------- tables ---------- */
+table { font-size: 0.9rem; margin-bottom: 0; }
+table th {
+  font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--pico-muted-color); font-weight: 600;
+  border-bottom: 1px solid var(--app-line); padding: 0.4rem 0.6rem;
+}
+table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--pico-table-border-color); vertical-align: middle; }
+table tbody tr:hover td { background: color-mix(in srgb, var(--pico-secondary-background) 55%, transparent); }
+table tbody tr:last-child td { border-bottom: none; }
+
+/* ---------- text helpers ---------- */
+.muted { color: var(--pico-muted-color); font-size: 0.85rem; }
+code { font-size: 0.84rem; background: var(--pico-code-background-color); padding: 0.05rem 0.3rem; border-radius: 0.3rem; }
+.err { color: var(--pico-color-red-550); }
+.ok { color: var(--pico-color-jade-550); }
+
+/* ---------- badges / pills (dark-mode safe via transparency) ---------- */
+.pill {
+  display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+  font-size: 0.74rem; font-weight: 600; line-height: 1.5;
+  background: var(--pico-secondary-background); color: var(--pico-secondary-inverse);
+  border: 1px solid transparent;
+}
+.pill-ok   { background: color-mix(in srgb, #16a34a 22%, transparent); color: #16a34a; border-color: color-mix(in srgb, #16a34a 35%, transparent); }
+.pill-warn { background: color-mix(in srgb, #d97706 22%, transparent); color: #d97706; border-color: color-mix(in srgb, #d97706 35%, transparent); }
+.pill-err  { background: color-mix(in srgb, #dc2626 22%, transparent); color: #ef4444; border-color: color-mix(in srgb, #dc2626 35%, transparent); }
+.pill-info { background: color-mix(in srgb, var(--app-accent) 20%, transparent); color: var(--app-accent); border-color: color-mix(in srgb, var(--app-accent) 35%, transparent); }
+
+/* ---------- buttons ---------- */
+button, [role="button"], a[role="button"] { border-radius: 0.5rem; font-weight: 600; }
+button.secondary, [role="button"].secondary {
+  --pico-background-color: transparent;
+  --pico-border-color: var(--app-line);
+  --pico-color: var(--pico-color);
+}
+.btn-sm, button.btn-sm { padding: 0.2rem 0.6rem; font-size: 0.82rem; }
+.btn-danger {
+  --pico-background-color: color-mix(in srgb, #dc2626 14%, transparent);
+  --pico-border-color: color-mix(in srgb, #dc2626 45%, transparent);
+  --pico-color: #ef4444;
+}
+
+/* ---------- details / disclosures ---------- */
+details { margin-top: 0.5rem; }
+summary { cursor: pointer; font-size: 0.9rem; }
+
+/* ---------- forms ---------- */
+form.inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.5rem 0.8rem; align-items: end; margin-top: 0.5rem; }
+form.inline label { font-size: 0.82rem; margin: 0; }
+form.inline input, form.inline select, form.inline textarea { margin: 0; }
+form.inline button { margin: 0; padding: 0.45rem 0.8rem; }
+label { font-weight: 500; }
+
+/* ---------- stat cards (dashboard / overviews) ---------- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.8rem; }
+.stat { padding: 0.85rem 1rem; border: 1px solid var(--pico-card-border-color); border-radius: var(--app-radius); background: var(--pico-card-background-color); }
+.stat .num { font-size: 1.7rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; }
+.stat .lbl { color: var(--pico-muted-color); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* ---------- empty state ---------- */
+.empty { text-align: center; color: var(--pico-muted-color); padding: 1.5rem 1rem; font-size: 0.9rem; }
+
+/* ---------- toolbar (filter bars) ---------- */
+.toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; }
+
+/* Tighten article (flash) blocks. */
+main > article { padding: 0.6rem 0.9rem; font-size: 0.9rem; border-radius: var(--app-radius); }
+
+@media (max-width: 640px) {
+  main { padding: 1rem 0.85rem 3rem; }
+  body > nav { flex-wrap: wrap; gap: 0.4rem; }
+  table { font-size: 0.84rem; }
+}
