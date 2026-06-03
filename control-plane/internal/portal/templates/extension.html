@@ -141,4 +141,28 @@
   </form>
 </section>
 {{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Recent calls <span class="muted">(involving {{$e.Extension}})</span></h2>
+  {{if .RecentCalls}}
+  <table>
+    <thead><tr><th>Started</th><th>Dir</th><th>From</th><th>To</th><th>Dur</th><th>Disp</th></tr></thead>
+    <tbody>
+      {{range .RecentCalls}}
+      <tr>
+        <td class="muted">{{.StartedAt.Format "Jan 2, 15:04"}}</td>
+        <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔ int</span>{{end}}</td>
+        <td><code>{{.CallerIDNum}}</code></td>
+        <td><code>{{.ToURI}}</code></td>
+        <td>{{humandur .DurationSec}}</td>
+        <td>{{if .Disposition}}<span class="pill {{if eq (deref .Disposition) "ANSWERED"}}pill-ok{{else}}pill-warn{{end}}">{{deref .Disposition}}</span>{{else}}—{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <a href="/admin/tenants/{{$t.ID}}/cdrs?q={{$e.Extension}}" class="btn-sm">View all in call log →</a>
+  {{else}}
+  <p class="empty">No calls involving this extension yet.</p>
+  {{end}}
+</section>
 {{end}}

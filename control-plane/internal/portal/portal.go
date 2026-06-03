@@ -1096,6 +1096,11 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 	if host == "" {
 		host = "127.0.0.1"
 	}
+	// Recent calls involving this extension (best-effort URI/caller-id match).
+	recentCalls, _ := s.store.ListCDRsFilteredForTenant(r.Context(), ext.TenantID, store.CDRFilter{
+		Search: ext.Extension,
+		Limit:  15,
+	})
 	s.renderLayout(w, r, "Ext "+ext.Extension, "extension", map[string]any{
 		"Tenant":         tenant,
 		"Extension":      ext,
@@ -1107,6 +1112,7 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 		"SIPTransport":   s.sipPublicTransport,
 		"RevealPassword": reveal,
 		"SIPPassword":    password,
+		"RecentCalls":    recentCalls,
 	})
 }
 
