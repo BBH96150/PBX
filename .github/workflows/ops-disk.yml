@@ -117,7 +117,7 @@ jobs:
               PGUSER=$(grep -E '^POSTGRES_USER=' /root/sip-platform/.env 2>/dev/null | cut -d= -f2-); PGUSER=${PGUSER:-sip}
               c=sip-platform-postgres-1
               echo "restoring $(basename "$newest") into scratch db bkrestore_test ..."
-              docker exec "$c" psql -U "$PGUSER" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS bkrestore_test;" -c "CREATE DATABASE bkrestore_test;" >/dev/null
+              docker exec "$c" psql -U "$PGUSER" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS bkrestore_test;" -c "CREATE DATABASE bkrestore_test;" >/dev/null
               if docker exec -i "$c" pg_restore -U "$PGUSER" -d bkrestore_test --no-owner < "$newest" 2>/tmp/restore.err; then
                 echo "pg_restore: OK"
               else
@@ -128,7 +128,7 @@ jobs:
                 n=$(docker exec "$c" psql -U "$PGUSER" -d bkrestore_test -tAc "SELECT count(*) FROM $tbl;" 2>/dev/null || echo "ERR")
                 echo "  $tbl: $n rows"
               done
-              docker exec "$c" psql -U "$PGUSER" -c "DROP DATABASE bkrestore_test;" >/dev/null && echo "scratch db dropped"
+              docker exec "$c" psql -U "$PGUSER" -d postgres -c "DROP DATABASE bkrestore_test;" >/dev/null && echo "scratch db dropped"
             fi
           fi
           if [ "$CHECK_BACKUPS" = "yes" ]; then
