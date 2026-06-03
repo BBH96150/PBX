@@ -45,6 +45,10 @@ on:
         description: "Type 'yes' for a read-only network-exposure audit (host listening ports + firewall). No changes."
         required: false
         default: "no"
+      check_backups:
+        description: "Type 'yes' to audit the Postgres backup situation (cron, latest dump age/size, retention). Read-only."
+        required: false
+        default: "no"
       fix_redis_bind:
         description: "Type 'yes' to bind Redis to 127.0.0.1 (it currently publishes to 0.0.0.0; recreates redis)."
         required: false
@@ -84,8 +88,9 @@ jobs:
           COMPOSE_APPLY: ${{ github.event.inputs.compose_apply }}
           AUDIT_NET: ${{ github.event.inputs.audit_net }}
           FIX_REDIS_BIND: ${{ github.event.inputs.fix_redis_bind }}
+          CHECK_BACKUPS: ${{ github.event.inputs.check_backups }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" "$FIX_REDIS_BIND" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" "$FIX_REDIS_BIND" "$CHECK_BACKUPS" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -98,6 +103,25 @@ jobs:
           COMPOSE_APPLY="${9:-no}"
           AUDIT_NET="${10:-no}"
           FIX_REDIS_BIND="${11:-no}"
+          CHECK_BACKUPS="${12:-no}"
+          if [ "$CHECK_BACKUPS" = "yes" ]; then
+            echo "===== Postgres backup audit (read-only) ====="
+            echo "-- cron entries mentioning backup/pg/dump --"
+            { crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null; } | grep -iE 'backup|pg_dump|pgdump|dump' | head || echo "(no backup cron found)"
+            echo "-- /var/backups/postgres (newest 8) --"
+            ls -lhtr /var/backups/postgres/ 2>/dev/null | tail -8 || echo "(dir missing — NO backups there)"
+            echo "-- newest dump age + size --"
+            newest=$(ls -t /var/backups/postgres/* 2>/dev/null | head -1)
+            if [ -n "${newest:-}" ]; then
+              echo "newest: $newest"
+              echo "size: $(du -h "$newest" | cut -f1)   modified: $(date -r "$newest" 2>/dev/null)"
+              echo "age: $(( ( $(date +%s) - $(stat -c %Y "$newest") ) / 3600 )) hours"
+            else
+              echo "NO dump files found — backups are NOT being written here. ⚠️"
+            fi
+            echo "-- any backup script on disk? --"
+            ls -la /root/*backup* /usr/local/bin/*backup* /root/sip-platform/*backup* 2>/dev/null | head || echo "(no obvious backup script)"
+          fi
           if [ "$FIX_REDIS_BIND" = "yes" ]; then
             echo "===== bind Redis to 127.0.0.1 ====="
             cd /root/sip-platform || { echo "no project dir"; exit 1; }
