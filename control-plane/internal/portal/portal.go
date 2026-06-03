@@ -711,8 +711,18 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		tenants = filtered
 	}
+	var scope *uuid.UUID
+	if tok := tokenFromCtx(r.Context()); tok != nil && tok.TenantID != nil {
+		scope = tok.TenantID
+	}
+	stats, err := s.store.GetPlatformStats(r.Context(), scope)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
 	s.renderLayout(w, r, "Tenants", "dashboard", map[string]any{
 		"Tenants": tenants,
+		"Stats":   stats,
 	})
 }
 

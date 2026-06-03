@@ -12,7 +12,10 @@
 </div>
 
 <div class="stats" style="margin:1rem 0">
-  <div class="stat"><div class="num">{{len .Tenants}}</div><div class="lbl">Tenants</div></div>
+  <div class="stat"><div class="num">{{.Stats.Tenants}}</div><div class="lbl">Tenants</div></div>
+  <div class="stat"><div class="num">{{.Stats.Extensions}}</div><div class="lbl">Active extensions</div></div>
+  <div class="stat"><div class="num">{{.Stats.DIDs}}</div><div class="lbl">Phone numbers</div></div>
+  <div class="stat"><div class="num">{{.Stats.CallsToday}}</div><div class="lbl">Calls today</div></div>
 </div>
 
 <section class="card">
