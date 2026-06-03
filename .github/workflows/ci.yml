@@ -244,7 +244,12 @@ jobs:
           docker tag "$IMAGE_REF" "$IMAGE:latest"
           echo "::endgroup::"
           echo "::group::migrate"
-          docker compose -p sip-platform --profile tools run --rm migrate up
+          # -T + </dev/null: this whole script is piped to `bash -se` over ssh,
+          # so `compose run` (which attaches stdin) would otherwise SLURP the
+          # rest of the heredoc — silently eating the restart/prune commands
+          # below, leaving the container running the old image. (Root cause of
+          # deploys that retagged :latest but never recreated. Fixed 2026-06-03.)
+          docker compose -p sip-platform --profile tools run --rm -T migrate up </dev/null
           echo "::endgroup::"
           echo "::group::restart"
           # --force-recreate: `up -d` after a re-tag does NOT reliably recreate
