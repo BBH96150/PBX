@@ -206,7 +206,7 @@
       <tbody>{{range .DIDs}}<tr><td><code>{{.E164}}</code></td><td class="muted">{{.DestinationKind}} {{.DestinationID}}</td></tr>{{end}}</tbody>
     </table>
     {{end}}
-    <p class="muted">Add via API (carrier_account + dest UUID required).</p>
+    <p><a href="/admin/tenants/{{$t.ID}}/dids" role="button" class="secondary btn-sm">Manage phone numbers →</a></p>
   </section>
 
   <section class="card">
