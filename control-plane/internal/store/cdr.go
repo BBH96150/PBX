@@ -128,8 +128,13 @@ type CDRFilter struct {
 // ListCDRsFilteredForTenant returns CDRs matching the filter, newest first.
 // All filter clauses are parameterized (no dynamic SQL).
 func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUID, f CDRFilter) ([]CDR, error) {
-	if f.Limit <= 0 || f.Limit > 500 {
+	// Default to a page-sized 200; clamp (don't reset) larger requests so the
+	// CSV export can ask for up to 10k rows without silently dropping to 200.
+	if f.Limit <= 0 {
 		f.Limit = 200
+	}
+	if f.Limit > 10000 {
+		f.Limit = 10000
 	}
 	const q = `
 		SELECT id, tenant_id, call_uuid, direction, from_uri, to_uri,
