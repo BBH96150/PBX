@@ -49,6 +49,10 @@ on:
         description: "Type 'yes' to audit the Postgres backup situation (cron, latest dump age/size, retention). Read-only."
         required: false
         default: "no"
+      test_restore:
+        description: "Type 'yes' to test-restore the newest dump into a scratch DB on the box, verify, and drop it (prod data untouched)."
+        required: false
+        default: "no"
       fix_redis_bind:
         description: "Type 'yes' to bind Redis to 127.0.0.1 (it currently publishes to 0.0.0.0; recreates redis)."
         required: false
@@ -89,8 +93,9 @@ jobs:
           AUDIT_NET: ${{ github.event.inputs.audit_net }}
           FIX_REDIS_BIND: ${{ github.event.inputs.fix_redis_bind }}
           CHECK_BACKUPS: ${{ github.event.inputs.check_backups }}
+          TEST_RESTORE: ${{ github.event.inputs.test_restore }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" "$FIX_REDIS_BIND" "$CHECK_BACKUPS" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" "$FIX_REDIS_BIND" "$CHECK_BACKUPS" "$TEST_RESTORE" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -104,6 +109,28 @@ jobs:
           AUDIT_NET="${10:-no}"
           FIX_REDIS_BIND="${11:-no}"
           CHECK_BACKUPS="${12:-no}"
+          TEST_RESTORE="${13:-no}"
+          if [ "$TEST_RESTORE" = "yes" ]; then
+            echo "===== backup test-restore (scratch DB; prod data untouched) ====="
+            newest=$(ls -t /var/backups/postgres/*.dump 2>/dev/null | head -1)
+            if [ -z "${newest:-}" ]; then echo "no dump to restore"; else
+              PGUSER=$(grep -E '^POSTGRES_USER=' /root/sip-platform/.env 2>/dev/null | cut -d= -f2-); PGUSER=${PGUSER:-sip}
+              c=sip-platform-postgres-1
+              echo "restoring $(basename "$newest") into scratch db bkrestore_test ..."
+              docker exec "$c" psql -U "$PGUSER" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS bkrestore_test;" -c "CREATE DATABASE bkrestore_test;" >/dev/null
+              if docker exec -i "$c" pg_restore -U "$PGUSER" -d bkrestore_test --no-owner < "$newest" 2>/tmp/restore.err; then
+                echo "pg_restore: OK"
+              else
+                echo "pg_restore finished with warnings (non-fatal for --no-owner): $(tail -2 /tmp/restore.err)"
+              fi
+              echo "-- sanity counts in the restored DB --"
+              for tbl in tenants extensions dids sms_messages schema_migrations; do
+                n=$(docker exec "$c" psql -U "$PGUSER" -d bkrestore_test -tAc "SELECT count(*) FROM $tbl;" 2>/dev/null || echo "ERR")
+                echo "  $tbl: $n rows"
+              done
+              docker exec "$c" psql -U "$PGUSER" -c "DROP DATABASE bkrestore_test;" >/dev/null && echo "scratch db dropped"
+            fi
+          fi
           if [ "$CHECK_BACKUPS" = "yes" ]; then
             echo "===== Postgres backup audit (read-only) ====="
             echo "-- cron entries mentioning backup/pg/dump --"
