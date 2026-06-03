@@ -62,12 +62,22 @@ auto-rolls-back if not. The FS container healthcheck is overridden to a
 password-free netstat probe (`docker-compose.prod.yml`) so rotation doesn't
 flap the health status.
 
-## Base-compose reconciliation (pending, do supervised)
+## Base-compose reconciliation (pending, do supervised — lower priority now)
 
 Goal: make the base compose repo-controlled so changes deploy automatically,
-instead of drifting on the box. This is **not** a no-op (the snapshot is missing
-`SIP_DOMAIN_SUFFIX` and `fs-gateways-init` that the repo base has), so it must be
-done with a human watching. Suggested steps:
+instead of drifting on the box.
+
+**Priority note:** the additive `docker-compose.prod.yml` override (synced by the
+deploy) already covers most ongoing compose needs (volumes, healthchecks, etc.),
+so the marginal value of a full base swap is now lower. The remaining gap is
+base-level deltas (image vs build, SAML mounts, redis bind, missing
+`SIP_DOMAIN_SUFFIX`/`fs-gateways-init`). `prod-compose.snapshot.yml` is the
+current accurate base reference.
+
+This is **not** a no-op (the box base is missing `SIP_DOMAIN_SUFFIX` and
+`fs-gateways-init` that the repo base has), and a full base swap replaces the
+live compose, so do it with a human watching and validate first. Suggested
+steps:
 
 1. Decide the canonical prod compose: either (a) a standalone
    `deploy/prod-compose.yml` (start from `prod-compose.snapshot.yml`, fold in the

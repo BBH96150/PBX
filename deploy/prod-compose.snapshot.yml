@@ -1,10 +1,12 @@
 # ⚠️ SNAPSHOT — NOT the live deploy source (yet).
 #
-# This is a verbatim capture (2026-06-01) of the hand-maintained
-# docker-compose.yml that actually runs in production on the Hetzner box
-# (/root/sip-platform/docker-compose.yml). It is committed here to bring prod's
-# compose under version control: a recovery point, a review surface, and the
-# starting point for the eventual base-compose reconciliation.
+# Capture of the hand-maintained docker-compose.yml that runs in production on
+# the Hetzner box (/root/sip-platform/docker-compose.yml), kept here as a
+# version-controlled recovery point / review surface. Originally captured
+# 2026-06-01; amended 2026-06-03 for the Redis loopback bind. The live FS ESL
+# password (a literal in event_socket.conf.xml) and the freeswitch_storage
+# volume + FS healthcheck (from docker-compose.prod.yml override) are layered on
+# top of this and are not reproduced in this base snapshot.
 #
 # It contains NO secrets — every credential is a ${VAR} reference resolved from
 # the box's .env at runtime. (The live box file uses `${VAR:-<dev-default>}`
@@ -61,7 +63,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379"
+      - "127.0.0.1:6379:6379"   # 2026-06-03: was "6379" (0.0.0.0); bound to loopback
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
