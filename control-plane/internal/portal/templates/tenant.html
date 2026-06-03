@@ -14,7 +14,7 @@
 {{template "tenant_subnav" .}}
 
 {{if or (eq $extCount 0) (eq $devCount 0) (eq $trunkCount 0)}}
-<section class="card" style="margin-top:1rem;background:#f5f8ff;border-color:#9ab">
+<section class="card callout" style="margin-top:1rem">
   <h2>Getting started</h2>
   <ol style="margin:0;padding-left:1.2rem;font-size:0.93rem">
     <li>{{if gt $trunkCount 0}}✓ {{else}}☐ {{end}}

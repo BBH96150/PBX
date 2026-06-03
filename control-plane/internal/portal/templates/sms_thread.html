@@ -7,10 +7,10 @@
 
 <section class="card" style="margin-top:1rem">
   {{if .Messages}}
-  <div style="display:flex;flex-direction:column;gap:0.4rem">
+  <div class="bubbles">
     {{range .Messages}}
-    <div style="max-width:70%;{{if eq .Direction "outbound"}}align-self:flex-end;text-align:right{{else}}align-self:flex-start{{end}}">
-      <div style="display:inline-block;padding:0.4rem 0.7rem;border-radius:0.6rem;{{if eq .Direction "outbound"}}background:#2b3a55{{else}}background:#33373f{{end}}">{{.Body}}</div>
+    <div class="bubble-row {{if eq .Direction "outbound"}}out{{else}}in{{end}}">
+      <div class="bubble {{if eq .Direction "outbound"}}out{{else}}in{{end}}">{{.Body}}</div>
       <div class="muted" style="font-size:0.75rem">{{.CreatedAt.Format "2006-01-02 15:04"}}{{if eq .Direction "outbound"}} · {{.Status}}{{end}}</div>
     </div>
     {{end}}

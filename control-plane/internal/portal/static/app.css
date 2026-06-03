@@ -72,6 +72,32 @@ section.card h2, .card h2 {
 }
 section.card h3 { font-size: 0.95rem; margin: 0.9rem 0 0.4rem; }
 
+/* Accent callout — info/getting-started card, dark-mode safe via color-mix. */
+.callout {
+  background: color-mix(in srgb, var(--app-accent) 8%, var(--pico-card-background-color));
+  border-color: color-mix(in srgb, var(--app-accent) 35%, var(--pico-card-border-color));
+}
+
+/* Inline warning banner (email-unverified, impersonation, etc.). */
+.banner-warn {
+  background: color-mix(in srgb, #e0a800 16%, var(--pico-card-background-color));
+  border: 1px solid color-mix(in srgb, #e0a800 45%, var(--pico-card-border-color));
+  padding: 0.55rem 0.85rem; margin-bottom: 0.85rem; font-size: 0.9rem;
+  border-radius: var(--app-radius);
+}
+
+/* ---------- SMS / chat bubbles ---------- */
+.bubbles { display: flex; flex-direction: column; gap: 0.4rem; }
+.bubble-row { max-width: 70%; }
+.bubble-row.out { align-self: flex-end; text-align: right; }
+.bubble-row.in  { align-self: flex-start; }
+.bubble {
+  display: inline-block; padding: 0.4rem 0.7rem; border-radius: 0.7rem;
+  text-align: left; font-size: 0.9rem; line-height: 1.35;
+}
+.bubble.out { background: var(--app-accent); color: #fff; }
+.bubble.in  { background: var(--pico-secondary-background, #e7e9ee); color: var(--pico-color); }
+
 /* ---------- tables ---------- */
 table { font-size: 0.9rem; margin-bottom: 0; }
 table th {

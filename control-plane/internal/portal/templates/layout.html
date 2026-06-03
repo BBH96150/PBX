@@ -38,7 +38,7 @@
 </nav>
 <main>
   {{if .EmailUnverified}}
-  <article style="background:#fff7d6;border:1px solid #e0c860;padding:0.55rem 0.85rem;margin-bottom:0.85rem;font-size:0.9rem">
+  <article class="banner-warn">
     ⚠ Please verify your email address.
     <form method="post" action="/admin/verify-email/resend" style="display:inline;margin-left:0.5rem">
       <button type="submit" class="secondary" style="padding:0.15rem 0.6rem;font-size:0.85rem">Resend verification email</button>
