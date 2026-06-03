@@ -56,6 +56,8 @@ type Server struct {
 	// Voicemail inbox: root under which FS-recorded audio_path values must
 	// resolve before we'll stream them (path-traversal guard).
 	vmStorageRoot string
+	// Call recordings: root under which CDR recording_path values must resolve.
+	recordingRoot string
 	// Secure controls cookie Secure flag — set true behind HTTPS.
 	Secure bool
 }
@@ -92,6 +94,8 @@ type Options struct {
 	// Voicemail inbox: root under which recorded audio files must live for
 	// the portal to stream them. Empty disables voicemail audio streaming.
 	VoicemailStorageRoot string
+	// Call recordings root. Empty disables recording streaming.
+	RecordingStorageRoot string
 }
 
 func New(s *store.Store, opts Options) (*Server, error) {
@@ -116,6 +120,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		sipPublicTransport: opts.SIPPublicTransport,
 		sipDomainSuffix:    strings.TrimPrefix(opts.SIPDomainSuffix, "."),
 		vmStorageRoot:      opts.VoicemailStorageRoot,
+		recordingRoot:      opts.RecordingStorageRoot,
 		// Auto-detect cookie Secure flag from PortalBaseURL — when we're
 		// served behind https://, set the flag so browsers refuse to
 		// send the session cookie over plaintext.
@@ -187,6 +192,8 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants", s.createTenant)
 		r.Get("/tenants/{tenantID}", s.tenantDetail)
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
+		r.Get("/tenants/{tenantID}/cdrs/{cdrID}/recording", s.cdrRecordingAudio)
+		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/recording/delete", s.cdrRecordingDelete)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
 		r.Post("/tenants/{tenantID}/moh", s.tenantSetMoH)
 		r.Post("/tenants/{tenantID}/extensions", s.createExtension)

@@ -179,6 +179,7 @@ func main() {
 		SIPPublicTransport:   cfg.SIPPublicTransport,
 		SIPDomainSuffix:      cfg.SIPDomainSuffix,
 		VoicemailStorageRoot: cfg.VoicemailStorageRoot,
+		RecordingStorageRoot: cfg.RecordingStorageRoot,
 	})
 	if err != nil {
 		slog.Error("portal init", "err", err)

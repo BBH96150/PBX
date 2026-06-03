@@ -78,6 +78,10 @@ type Config struct {
 	// must resolve under this root (path-traversal guard).
 	VoicemailStorageRoot string
 
+	// Call recording playback: read-only mount of FS's recordings dir.
+	// CDR recording_path values must resolve under this root.
+	RecordingStorageRoot string
+
 	// Phase A.1 (Wildcard SIP domains): suffix appended to the tenant
 	// slug to auto-generate the primary sip_domain on tenant create.
 	// E.g., suffix "pbx.tendpos.com" + slug "bbh" → "bbh.pbx.tendpos.com".
@@ -135,6 +139,7 @@ func FromEnv() (*Config, error) {
 	c.FSDynamicGatewayDir = envOr("FS_DYNAMIC_GATEWAY_DIR", "/fs-gateways")
 	c.FSLogDir = envOr("FS_LOG_DIR", "/fs-logs")
 	c.VoicemailStorageRoot = envOr("VOICEMAIL_STORAGE_ROOT", "/var/lib/freeswitch/storage")
+	c.RecordingStorageRoot = envOr("RECORDING_STORAGE_ROOT", "/var/lib/freeswitch/recordings")
 	c.SIPDomainSuffix = strings.TrimPrefix(os.Getenv("SIP_DOMAIN_SUFFIX"), ".")
 
 	c.SMTPHost = os.Getenv("SMTP_HOST")

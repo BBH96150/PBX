@@ -44,7 +44,17 @@
         <td>{{if .BillableSec}}{{.BillableSec}}s{{else}}—{{end}}</td>
         <td>{{if .Disposition}}<span class="pill {{if eq (deref .Disposition) "ANSWERED"}}pill-ok{{else}}pill-warn{{end}}">{{deref .Disposition}}</span>{{else}}—{{end}}</td>
         <td class="muted">{{.HangupCause}}</td>
-        <td>{{if .RecordingPath}}<span class="pill">recorded</span>{{else}}—{{end}}</td>
+        <td>
+          {{if .RecordingPath}}
+          <audio controls preload="none" style="height:1.8rem;vertical-align:middle">
+            <source src="/admin/tenants/{{$t.ID}}/cdrs/{{.ID}}/recording">
+          </audio>
+          <a href="/admin/tenants/{{$t.ID}}/cdrs/{{.ID}}/recording" download style="font-size:0.82rem">⬇</a>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/cdrs/{{.ID}}/recording/delete" style="display:inline;margin:0" onsubmit="return confirm('Delete this recording? This cannot be undone.')">
+            <button type="submit" class="secondary" style="padding:0.1rem 0.4rem;font-size:0.78rem">✕</button>
+          </form>
+          {{else}}—{{end}}
+        </td>
       </tr>
       {{end}}
     </tbody>

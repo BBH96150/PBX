@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,6 +125,45 @@ func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUI
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// GetCDRForTenant fetches one CDR scoped to a tenant — used before streaming or
+// deleting its recording.
+func (s *Store) GetCDRForTenant(ctx context.Context, tenantID, cdrID uuid.UUID) (*CDR, error) {
+	const q = `
+		SELECT id, tenant_id, call_uuid, direction, from_uri, to_uri,
+		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
+		       started_at, answered_at, ended_at,
+		       duration_sec, billable_sec, disposition,
+		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), raw
+		  FROM cdrs WHERE id = $1 AND tenant_id = $2`
+	var c CDR
+	var rawJSON []byte
+	err := s.DB.QueryRow(ctx, q, cdrID, tenantID).Scan(
+		&c.ID, &c.TenantID, &c.CallUUID, &c.Direction, &c.FromURI, &c.ToURI,
+		&c.CallerIDNum, &c.CallerIDName,
+		&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
+		&c.DurationSec, &c.BillableSec, &c.Disposition,
+		&c.HangupCause, &c.CarrierID, &c.RecordingPath, &rawJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// ClearCDRRecording blanks a CDR's recording_path (after the file is deleted),
+// tenant-scoped.
+func (s *Store) ClearCDRRecording(ctx context.Context, tenantID, cdrID uuid.UUID) error {
+	tag, err := s.DB.Exec(ctx,
+		`UPDATE cdrs SET recording_path = NULL WHERE id = $1 AND tenant_id = $2`, cdrID, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("CDR not found for this tenant")
+	}
+	return nil
 }
 
 // CreateCDR inserts a CDR. ON CONFLICT (call_uuid) DO NOTHING absorbs the

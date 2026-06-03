@@ -34,6 +34,10 @@ services:
   control-plane:
     volumes:
       - freeswitch_storage:/var/lib/freeswitch/storage:ro
+      # Call recording playback: read-only access to FS's recordings dir so the
+      # portal can stream/download/delete recordings from the CDR viewer.
+      - freeswitch_recordings:/var/lib/freeswitch/recordings:ro
 
 volumes:
   freeswitch_storage:
+  freeswitch_recordings:
