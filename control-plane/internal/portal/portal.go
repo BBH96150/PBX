@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"html/template"
@@ -212,6 +213,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/sms/thread", s.smsThread)
 		r.Post("/tenants/{tenantID}/sms/send", s.smsSend)
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
+		r.Get("/tenants/{tenantID}/cdrs.csv", s.tenantCDRsCSV)
 		r.Get("/tenants/{tenantID}/cdrs/{cdrID}/recording", s.cdrRecordingAudio)
 		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/recording/delete", s.cdrRecordingDelete)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
@@ -984,24 +986,7 @@ func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	filter := store.CDRFilter{
-		Direction: q.Get("direction"),
-		Search:    strings.TrimSpace(q.Get("q")),
-		Limit:     200,
-	}
-	// Dates are YYYY-MM-DD in the box's local interpretation (UTC here). "until"
-	// is inclusive of the chosen day, so advance it by 24h.
-	if v := q.Get("since"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.Since = &t
-		}
-	}
-	if v := q.Get("until"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			end := t.Add(24 * time.Hour)
-			filter.Until = &end
-		}
-	}
+	filter := cdrFilterFromQuery(q, 200)
 	cdrs, _ := s.store.ListCDRsFilteredForTenant(r.Context(), tid, filter)
 	s.renderLayout(w, r, tenant.Name+" · CDRs", "cdrs", map[string]any{
 		"Tenant":    tenant,
@@ -1012,6 +997,68 @@ func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
 		"Until":     q.Get("until"),
 		"NavActive": "cdrs",
 	})
+}
+
+// cdrFilterFromQuery builds a CDRFilter from the portal's query params. Dates
+// are YYYY-MM-DD in UTC; "until" is inclusive of the chosen day (advanced 24h).
+func cdrFilterFromQuery(q url.Values, limit int) store.CDRFilter {
+	f := store.CDRFilter{
+		Direction: q.Get("direction"),
+		Search:    strings.TrimSpace(q.Get("q")),
+		Limit:     limit,
+	}
+	if v := q.Get("since"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			f.Since = &t
+		}
+	}
+	if v := q.Get("until"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			end := t.Add(24 * time.Hour)
+			f.Until = &end
+		}
+	}
+	return f
+}
+
+// tenantCDRsCSV streams the filtered call log as a CSV download.
+func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.store.GetTenant(r.Context(), tid); err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	filter := cdrFilterFromQuery(r.URL.Query(), 10000)
+	cdrs, err := s.store.ListCDRsFilteredForTenant(r.Context(), tid, filter)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="call-log.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"started_at", "direction", "from", "to", "caller_id_num", "caller_id_name", "duration_sec", "billable_sec", "disposition", "hangup_cause"})
+	intStr := func(p *int) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.Itoa(*p)
+	}
+	for _, c := range cdrs {
+		disp := ""
+		if c.Disposition != nil {
+			disp = *c.Disposition
+		}
+		_ = cw.Write([]string{
+			c.StartedAt.UTC().Format(time.RFC3339), c.Direction, c.FromURI, c.ToURI,
+			c.CallerIDNum, c.CallerIDName, intStr(c.DurationSec), intStr(c.BillableSec),
+			disp, c.HangupCause,
+		})
+	}
+	cw.Flush()
 }
 
 // ---------------------------------------------------------------------------
