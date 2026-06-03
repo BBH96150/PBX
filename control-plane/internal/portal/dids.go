@@ -143,6 +143,7 @@ func (s *Server) didsList(w http.ResponseWriter, r *http.Request) {
 	dids, _ := s.store.ListDIDsForTenant(r.Context(), tid)
 	accounts, _ := s.store.ListCarrierAccountsForTenant(r.Context(), tid)
 	destGroups, destLabels := s.didDestinations(r.Context(), tid)
+	schedules, _ := s.store.ListSchedulesForTenant(r.Context(), tid)
 
 	// Resolve each DID's destination to a human label for the table so we show
 	// "Sales (601)" instead of a bare UUID. Disabled/removed destinations fall
@@ -161,7 +162,67 @@ func (s *Server) didsList(w http.ResponseWriter, r *http.Request) {
 		"DestGroups": destGroups,
 		"RowDest":    rowDest,
 		"HasDest":    len(destGroups) > 0,
+		"Schedules":  schedules,
 	})
+}
+
+// didSetSchedule attaches (or clears) a business-hours schedule + closed
+// destination on a DID. schedule_id="" clears after-hours routing.
+func (s *Server) didSetSchedule(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	didID, err := uuid.Parse(chi.URLParam(r, "didID"))
+	if err != nil {
+		http.Error(w, "bad did id", 400)
+		return
+	}
+	_ = r.ParseForm()
+	redirect := "/admin/tenants/" + tid.String() + "/dids"
+
+	schedRaw := strings.TrimSpace(r.FormValue("schedule_id"))
+	if schedRaw == "" {
+		// Clear after-hours routing.
+		if err := s.store.SetDIDScheduleForTenant(r.Context(), tid, didID, nil, "", nil); err != nil {
+			s.flashErr(w, r, redirect, err)
+			return
+		}
+		http.Redirect(w, r, redirect+"?flash=After-hours+routing+cleared.", http.StatusSeeOther)
+		return
+	}
+	schedID, err := uuid.Parse(schedRaw)
+	if err != nil {
+		s.flashErr(w, r, redirect, errors.New("pick a schedule"))
+		return
+	}
+	if _, err := s.store.GetScheduleForTenant(r.Context(), tid, schedID); err != nil {
+		s.flashErr(w, r, redirect, errors.New("that schedule is no longer available"))
+		return
+	}
+	// Closed destination — validate against the tenant's destinations.
+	closedRaw := r.FormValue("closed_destination")
+	kind, idStr, found := strings.Cut(closedRaw, ":")
+	if !found {
+		s.flashErr(w, r, redirect, errors.New("pick where after-hours calls should go"))
+		return
+	}
+	closedID, err := uuid.Parse(idStr)
+	if err != nil {
+		s.flashErr(w, r, redirect, errors.New("pick where after-hours calls should go"))
+		return
+	}
+	if _, destLabels := s.didDestinations(r.Context(), tid); destLabels[closedRaw] == "" {
+		s.flashErr(w, r, redirect, errors.New("that after-hours destination is no longer available"))
+		return
+	}
+	if err := s.store.SetDIDScheduleForTenant(r.Context(), tid, didID, &schedID, kind, &closedID); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, tid, "did.schedule.set", "did", &didID,
+		map[string]any{"schedule_id": schedID.String(), "closed_kind": kind})
+	http.Redirect(w, r, redirect+"?flash=After-hours+routing+saved.", http.StatusSeeOther)
 }
 
 func (s *Server) didCreate(w http.ResponseWriter, r *http.Request) {

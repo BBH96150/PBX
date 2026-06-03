@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -332,6 +333,17 @@ func (h *Handler) handleInboundPSTN(w http.ResponseWriter, r *http.Request, dest
 		return
 	}
 
+	// Business hours: when the DID has a schedule that is CLOSED right now,
+	// route to its closed destination instead of the normal one. DIDs with no
+	// schedule (the common case) are unaffected — ResolveScheduledClosedDestination
+	// returns pgx.ErrNoRows / nil and we fall straight through.
+	if cd, cerr := h.store.ResolveScheduledClosedDestination(r.Context(), normalized, time.Now()); cerr == nil && cd != nil {
+		if h.routeClosedDestination(r.Context(), w, cd, normalized) {
+			return
+		}
+		slog.Warn("closed-destination routing failed; using normal routing", "did", normalized, "kind", cd.Kind)
+	}
+
 	target, err := h.store.LookupDIDExtensionTarget(r.Context(), normalized)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -384,6 +396,64 @@ func (h *Handler) handleInboundPSTN(w http.ResponseWriter, r *http.Request, dest
 		Name:    "inbound-" + e164.DialDigits(normalized),
 		Actions: inboundActions,
 	})
+}
+
+// routeClosedDestination routes an inbound call to a DID's after-hours
+// destination (business-hours feature). Returns false if the configured
+// destination can't be resolved, so the caller falls back to normal routing.
+func (h *Handler) routeClosedDestination(ctx context.Context, w http.ResponseWriter, cd *store.ScheduledClosedDestination, normalized string) bool {
+	dest := e164.DialDigits(normalized)
+	switch cd.Kind {
+	case "extension":
+		t, err := h.store.ExtensionRouteByID(ctx, cd.ID)
+		if err != nil {
+			return false
+		}
+		bridgeURI := fmt.Sprintf("sofia/internal/sip:%s@%s;fs_path=sip:%s;lr",
+			t.SIPUsername, t.SIPDomain, h.sipTarget)
+		actions := []dialplanAction{
+			{App: "set", Data: "hangup_after_bridge=true"},
+			{App: "set", Data: "x_call_direction=inbound"},
+			{App: "set", Data: "x_tenant_id=" + t.TenantID.String()},
+			{App: "set", Data: "x_did=" + normalized},
+			{App: "set", Data: "x_closed_route=1"},
+		}
+		if moh := h.store.TenantMoHByDomain(ctx, t.SIPDomain); moh != "" {
+			actions = append(actions, dialplanAction{App: "set", Data: "hold_music=" + moh})
+		}
+		actions = append(actions, dialplanAction{App: "bridge", Data: bridgeURI})
+		writeDialplan(w, dialplanData{Context: "public", Name: "inbound-closed-" + dest, Actions: actions})
+		return true
+	case "ring_group":
+		info, err := h.store.RingGroupRouteByID(ctx, cd.ID)
+		if err != nil {
+			return false
+		}
+		h.routeRingGroup(ctx, w, info, dest, "public")
+		return true
+	case "voicemail":
+		vm, err := h.store.VoicemailRouteByID(ctx, cd.ID)
+		if err != nil {
+			return false
+		}
+		h.routeDIDVoicemail(w, vm, dest)
+		return true
+	case "ivr":
+		ivr, err := h.store.IVRByID(ctx, cd.ID)
+		if err != nil {
+			return false
+		}
+		h.routeIVR(w, ivr, dest, "public")
+		return true
+	case "queue":
+		q, err := h.store.QueueByID(ctx, cd.ID)
+		if err != nil {
+			return false
+		}
+		h.routeQueue(w, q, dest, "public")
+		return true
+	}
+	return false
 }
 
 // handleVoicemailCheck serves *97 — the caller checks their own voicemail.

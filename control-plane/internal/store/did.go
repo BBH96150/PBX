@@ -21,8 +21,32 @@ type DID struct {
 	DestinationID    uuid.UUID  `json:"destination_id"`
 	CNAM             string     `json:"cnam,omitempty"`
 	Enabled          bool       `json:"enabled"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// Business-hours routing (nil/empty = none).
+	ScheduleID            *uuid.UUID `json:"schedule_id,omitempty"`
+	ClosedDestinationKind string     `json:"closed_destination_kind,omitempty"`
+	ClosedDestinationID   *uuid.UUID `json:"closed_destination_id,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+}
+
+// SetDIDScheduleForTenant sets (or clears) a DID's business-hours schedule and
+// closed destination. Pass scheduleID=nil to disable after-hours routing.
+func (s *Store) SetDIDScheduleForTenant(ctx context.Context, tenantID, didID uuid.UUID, scheduleID *uuid.UUID, closedKind string, closedID *uuid.UUID) error {
+	tag, err := s.DB.Exec(ctx, `
+		UPDATE dids
+		   SET schedule_id = $3,
+		       closed_destination_kind = NULLIF($4,''),
+		       closed_destination_id = $5,
+		       updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`,
+		didID, tenantID, scheduleID, closedKind, closedID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDIDNotFound
+	}
+	return nil
 }
 
 type CreateDIDInput struct {
@@ -63,7 +87,8 @@ func (s *Store) ListDIDsForTenant(ctx context.Context, tenantID uuid.UUID) ([]DI
 	const q = `
 		SELECT id, tenant_id, carrier_id, carrier_account_id, e164,
 		       destination_kind, destination_id, COALESCE(cnam,''),
-		       enabled, created_at, updated_at
+		       enabled, schedule_id, COALESCE(closed_destination_kind,''),
+		       closed_destination_id, created_at, updated_at
 		  FROM dids WHERE tenant_id = $1
 		 ORDER BY e164`
 	rows, err := s.DB.Query(ctx, q, tenantID)
@@ -77,7 +102,8 @@ func (s *Store) ListDIDsForTenant(ctx context.Context, tenantID uuid.UUID) ([]DI
 		if err := rows.Scan(
 			&d.ID, &d.TenantID, &d.CarrierID, &d.CarrierAccountID, &d.E164,
 			&d.DestinationKind, &d.DestinationID, &d.CNAM,
-			&d.Enabled, &d.CreatedAt, &d.UpdatedAt,
+			&d.Enabled, &d.ScheduleID, &d.ClosedDestinationKind,
+			&d.ClosedDestinationID, &d.CreatedAt, &d.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

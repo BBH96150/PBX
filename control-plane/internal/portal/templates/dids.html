@@ -70,6 +70,29 @@
               <button type="submit" style="padding:0.2rem 0.6rem">Save routing</button>
             </form>
           </details>
+          {{if $.Schedules}}
+          <details style="margin-top:0.4rem">
+            <summary class="muted" style="font-size:0.85rem;cursor:pointer">After-hours routing{{if .ScheduleID}} <span class="pill pill-ok">on</span>{{end}}</summary>
+            <form method="post" action="/admin/tenants/{{$t.ID}}/dids/{{.ID}}/schedule" style="margin-top:0.4rem">
+              {{$curSched := ""}}{{if .ScheduleID}}{{$curSched = .ScheduleID.String}}{{end}}
+              <label style="font-size:0.85rem">Schedule
+                <select name="schedule_id">
+                  <option value="">— none (all-hours) —</option>
+                  {{range $.Schedules}}<option value="{{.ID}}"{{if eq .ID.String $curSched}} selected{{end}}>{{.Name}} ({{.Timezone}})</option>{{end}}
+                </select>
+              </label>
+              {{$curClosed := ""}}{{if .ClosedDestinationID}}{{$curClosed = printf "%s:%s" .ClosedDestinationKind .ClosedDestinationID.String}}{{end}}
+              <label style="font-size:0.85rem">When closed, route to
+                <select name="closed_destination">
+                  {{range $.DestGroups}}<optgroup label="{{.Heading}}">
+                    {{range .Options}}<option value="{{.Key}}"{{if eq .Key $curClosed}} selected{{end}}>{{.Label}}</option>{{end}}
+                  </optgroup>{{end}}
+                </select>
+              </label>
+              <button type="submit" style="padding:0.2rem 0.6rem">Save after-hours</button>
+            </form>
+          </details>
+          {{end}}
           <div id="did-test-{{.ID}}" style="margin-top:0.4rem;min-height:1.2rem"></div>
         </td>
       </tr>

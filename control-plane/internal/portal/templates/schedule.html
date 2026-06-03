@@ -1,0 +1,81 @@
+{{define "schedule_content"}}
+{{$t := .Tenant}}
+{{$sc := .Schedule}}
+<div class="row">
+  <h1 style="margin:0">{{$sc.Name}} <span class="muted">— {{$sc.Timezone}}</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}/schedules">← all schedules</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Open hours <span class="muted">({{len .Periods}})</span></h2>
+  <p class="muted" style="font-size:0.9rem">When the line is OPEN. Anything outside these windows (in {{$sc.Timezone}}) is treated as closed. Add multiple windows per day for e.g. a lunch break.</p>
+  {{if .Periods}}
+  <table>
+    <thead><tr><th>Day</th><th>Open</th><th>Close</th><th></th></tr></thead>
+    <tbody>
+      {{range .Periods}}
+      <tr>
+        <td>{{.WeekName}}</td><td><code>{{.Open}}</code></td><td><code>{{.Close}}</code></td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/schedules/{{$sc.ID}}/periods/{{.ID}}/delete" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No open hours set — the line counts as closed at all times.</p>{{end}}
+  <details style="margin-top:0.5rem"><summary>Add open hours</summary>
+    <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/schedules/{{$sc.ID}}/periods" style="margin-top:0.4rem">
+      <label>Day
+        <select name="weekday" required>
+          {{range $i, $name := .Weekdays}}<option value="{{$i}}">{{$name}}</option>{{end}}
+        </select>
+      </label>
+      <label>Open<input name="open" type="time" value="09:00" required></label>
+      <label>Close<input name="close" type="time" value="17:00" required></label>
+      <button type="submit">Add</button>
+    </form>
+  </details>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Date overrides <span class="muted">({{len .Holidays}})</span></h2>
+  <p class="muted" style="font-size:0.9rem">Force a specific date open or closed regardless of the weekly hours (holidays, special events).</p>
+  {{if .Holidays}}
+  <table>
+    <thead><tr><th>Date</th><th>Name</th><th>Effect</th><th></th></tr></thead>
+    <tbody>
+      {{range .Holidays}}
+      <tr>
+        <td><code>{{.OnDate}}</code></td><td>{{.Name}}</td>
+        <td>{{if .IsOpen}}<span class="pill pill-ok">open</span>{{else}}<span class="pill">closed</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/schedules/{{$sc.ID}}/holidays/{{.ID}}/delete" style="margin:0">
+            <button type="submit" class="secondary" style="padding:0.2rem 0.6rem">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <details style="margin-top:0.5rem"><summary>Add date override</summary>
+    <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/schedules/{{$sc.ID}}/holidays" style="margin-top:0.4rem">
+      <label>Date<input name="on_date" type="date" required></label>
+      <label>Name<input name="name" placeholder="Independence Day"></label>
+      <label><input type="checkbox" name="is_open" value="true"> Open this day (default: closed)</label>
+      <button type="submit">Save</button>
+    </form>
+  </details>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <form method="post" action="/admin/tenants/{{$t.ID}}/schedules/{{$sc.ID}}/delete" onsubmit="return confirm('Delete this schedule? Any phone numbers using it revert to all-hours routing.')">
+    <button type="submit" class="secondary">Delete schedule</button>
+  </form>
+</section>
+{{end}}

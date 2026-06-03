@@ -1,0 +1,40 @@
+{{define "schedules_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Business hours</h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>What this does</h2>
+  <p class="muted" style="font-size:0.9rem">
+    A schedule is a set of weekly open hours (plus holiday overrides) in a timezone.
+    Attach one to a <a href="/admin/tenants/{{$t.ID}}/dids">phone number</a> and pick an after-hours destination —
+    inbound calls route normally during open hours and to the after-hours destination (e.g. voicemail) when closed.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Schedules <span class="muted">({{len .Schedules}})</span></h2>
+  {{if .Schedules}}
+  <table>
+    <thead><tr><th>Name</th><th>Timezone</th><th></th></tr></thead>
+    <tbody>
+      {{range .Schedules}}
+      <tr><td>{{.Name}}</td><td class="muted">{{.Timezone}}</td><td><a href="/admin/tenants/{{$t.ID}}/schedules/{{.ID}}">Manage hours →</a></td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No schedules yet.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a schedule</h2>
+  <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/schedules">
+    <label>Name<input name="name" placeholder="Office hours" required></label>
+    <label>Timezone<input name="timezone" value="UTC" placeholder="America/New_York"></label>
+    <button type="submit">Create</button>
+    <small class="muted">IANA timezone, e.g. <code>America/New_York</code>, <code>Europe/London</code>.</small>
+  </form>
+</section>
+{{end}}
