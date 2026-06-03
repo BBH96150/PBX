@@ -45,6 +45,10 @@ on:
         description: "Type 'yes' for a read-only network-exposure audit (host listening ports + firewall). No changes."
         required: false
         default: "no"
+      fix_redis_bind:
+        description: "Type 'yes' to bind Redis to 127.0.0.1 (it currently publishes to 0.0.0.0; recreates redis)."
+        required: false
+        default: "no"
       compose_apply:
         description: "Type 'yes' to run `docker compose up -d` on the box (applies the synced override; recreates only services whose config changed)."
         required: false
@@ -79,8 +83,9 @@ jobs:
           DIAG_ESL: ${{ github.event.inputs.diag_esl }}
           COMPOSE_APPLY: ${{ github.event.inputs.compose_apply }}
           AUDIT_NET: ${{ github.event.inputs.audit_net }}
+          FIX_REDIS_BIND: ${{ github.event.inputs.fix_redis_bind }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$CLEAN" "$HARDEN" "$RECREATE" "$SHOW_COMPOSE" "$APPLY_VM_OVERRIDE" "$CHECK_ENV" "$ROTATE_ESL" "$DIAG_ESL" "$COMPOSE_APPLY" "$AUDIT_NET" "$FIX_REDIS_BIND" <<'EOF'
           set -u
           CLEAN="${1:-no}"
           HARDEN="${2:-no}"
@@ -92,6 +97,22 @@ jobs:
           DIAG_ESL="${8:-no}"
           COMPOSE_APPLY="${9:-no}"
           AUDIT_NET="${10:-no}"
+          FIX_REDIS_BIND="${11:-no}"
+          if [ "$FIX_REDIS_BIND" = "yes" ]; then
+            echo "===== bind Redis to 127.0.0.1 ====="
+            cd /root/sip-platform || { echo "no project dir"; exit 1; }
+            cp -a docker-compose.yml docker-compose.yml.bak.redis
+            # Replace the bare publish `- "6379"` with a loopback-only mapping.
+            sed -i 's#^\([[:space:]]*\)- "6379"[[:space:]]*$#\1- "127.0.0.1:6379:6379"#' docker-compose.yml
+            echo "redis ports lines now:"; grep -nE '6379' docker-compose.yml | head
+            docker compose -p sip-platform up -d redis >/dev/null 2>&1
+            sleep 8
+            echo "-- public 32769 / redis listeners after --"
+            ss -tlnH 2>/dev/null | awk '{print $4}' | grep -E ':32769|:6379' || echo "(no 0.0.0.0 redis listener — good)"
+            echo "-- redis container + control-plane health --"
+            docker ps --format '{{.Names}} {{.Status}}' | grep -E 'redis|control-plane'
+            curl -s -o /dev/null -w 'healthz=%{http_code}\n' --max-time 5 http://127.0.0.1:8080/healthz || true
+          fi
           if [ "$AUDIT_NET" = "yes" ]; then
             echo "===== network exposure (read-only) ====="
             echo "-- host LISTEN sockets (non-loopback are internet-reachable unless firewalled) --"
