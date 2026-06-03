@@ -31,7 +31,21 @@ this instead of the console.
 `.github/workflows/monitor.yml` (scheduled, every 30 min) checks disk %,
 container health, and `/healthz`; a failed run emails repo admins.
 
-### Security posture (audited 2026-06-03)
+### Backups (verified 2026-06-03)
+
+A cron (`/usr/local/sbin/pg-backup-sip.sh`, 03:17 UTC daily) writes pg_dump
+custom-format dumps to `/var/backups/postgres/` (one/day, ~6 days retained).
+**Verified restorable:** `ops-disk.yml -f test_restore=yes` restores the newest
+dump into a scratch DB on the box, checks row counts, and drops it (prod data
+untouched) — the last run restored cleanly with real data.
+
+`ops-disk.yml -f check_backups=yes` audits cron + dump age/size (read-only).
+
+**Gap / recommendation:** dumps live *only on the box*, so a box/disk loss takes
+the backups with it. For real disaster recovery, ship them off-box (S3 /
+Backblaze / another host) — not yet done.
+
+## Security posture (audited 2026-06-03)
 
 - **Firewall:** `ufw` is active with a default-deny allowlist — only SSH (22),
   SIP/RTP (5060, 5066, 5070, 16384:16484) and Caddy (80/443) are open. Run
