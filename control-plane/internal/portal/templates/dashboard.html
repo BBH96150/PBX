@@ -22,13 +22,16 @@
   <h2>Workspaces</h2>
   {{if .Tenants}}
   <table>
-    <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Ext</th><th>Numbers</th><th>Created</th><th></th></tr></thead>
     <tbody>
       {{range .Tenants}}
+      {{$c := index $.Counts .ID}}
       <tr>
         <td><strong>{{.Name}}</strong></td>
         <td><code>{{.Slug}}</code></td>
         <td>{{if eq .Status "active"}}<span class="pill pill-ok">{{.Status}}</span>{{else}}<span class="pill">{{.Status}}</span>{{end}}</td>
+        <td>{{$c.Extensions}}</td>
+        <td>{{$c.DIDs}}</td>
         <td class="muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
         <td><a href="/admin/tenants/{{.ID}}">Open →</a></td>
       </tr>

@@ -725,10 +725,12 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recent, _ := s.store.ListRecentCDRs(r.Context(), scope, 10)
+	counts, _ := s.store.GetTenantCounts(r.Context())
 	s.renderLayout(w, r, "Tenants", "dashboard", map[string]any{
 		"Tenants":     tenants,
 		"Stats":       stats,
 		"RecentCalls": recent,
+		"Counts":      counts,
 	})
 }
 
