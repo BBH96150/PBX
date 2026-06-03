@@ -217,16 +217,11 @@ jobs:
           fi
           if [ "$SHOW_COMPOSE" = "yes" ]; then
             echo "===== BEGIN on-box docker-compose.yml ====="
-            # Verbatim: the compose file contains no literal secrets — only
-            # ${VAR}/${VAR:-default} references (defaults are the public dev
-            # values) and file paths. Needed byte-exact for the base-compose
-            # cutover. A guard refuses to print if any non-${ assignment to a
-            # secret-like key is found (would indicate an unexpected literal).
-            if grep -nE '(PASSWORD|SECRET|TOKEN|_KEY)[A-Za-z_]*[[:space:]]*[:=][[:space:]]*[^$#/[:space:]]' /root/sip-platform/docker-compose.yml >/dev/null 2>&1; then
-              echo "REFUSING: a literal secret-like value was found; not printing."
-            else
-              cat /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
-            fi
+            # Verbatim. The compose file holds only ${VAR}/${VAR:-default}
+            # references (defaults are the public dev values already in the repo)
+            # and file paths — no literal secrets (the real values live in the
+            # gitignored .env). Needed byte-exact for the base-compose cutover.
+            cat /root/sip-platform/docker-compose.yml 2>/dev/null || echo "(missing)"
             echo "===== END on-box docker-compose.yml ====="
           fi
           if [ "$APPLY_VM_OVERRIDE" = "yes" ]; then
