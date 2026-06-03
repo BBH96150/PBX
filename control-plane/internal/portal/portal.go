@@ -11,6 +11,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -132,6 +133,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 	t := template.New("").Funcs(template.FuncMap{
 		"deref":       funcs["deref"],
 		"dyntemplate": srv.dyntemplate,
+		"humandur":    humandur,
 	})
 	if _, err := t.ParseFS(tmplFS, "templates/*.html"); err != nil {
 		return nil, err
@@ -1402,6 +1404,36 @@ func init() {
 		"dyntemplate": func(name string, data any) (template.HTML, error) {
 			return "", nil
 		},
+		"humandur": humandur,
+	}
+}
+
+// humandur formats a duration in seconds as "1h02m", "3m05s", or "12s".
+// Accepts int or *int (nil/zero → "—").
+func humandur(v any) string {
+	var s int
+	switch n := v.(type) {
+	case int:
+		s = n
+	case *int:
+		if n == nil {
+			return "—"
+		}
+		s = *n
+	default:
+		return "—"
+	}
+	if s <= 0 {
+		return "—"
+	}
+	h, m, sec := s/3600, (s%3600)/60, s%60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%dh%02dm", h, m)
+	case m > 0:
+		return fmt.Sprintf("%dm%02ds", m, sec)
+	default:
+		return fmt.Sprintf("%ds", sec)
 	}
 }
 

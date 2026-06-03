@@ -36,12 +36,12 @@
     <tbody>
       {{range .CDRs}}
       <tr>
-        <td class="muted">{{.StartedAt.Format "2006-01-02 15:04:05"}}</td>
-        <td><span class="pill">{{.Direction}}</span></td>
+        <td class="muted">{{.StartedAt.Format "Jan 2, 15:04:05"}}</td>
+        <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔ internal</span>{{end}}</td>
         <td><code>{{.CallerIDNum}}</code>{{if .CallerIDName}} <span class="muted">{{.CallerIDName}}</span>{{end}}</td>
         <td><code>{{.ToURI}}</code></td>
-        <td>{{if .DurationSec}}{{.DurationSec}}s{{else}}—{{end}}</td>
-        <td>{{if .BillableSec}}{{.BillableSec}}s{{else}}—{{end}}</td>
+        <td>{{humandur .DurationSec}}</td>
+        <td>{{humandur .BillableSec}}</td>
         <td>{{if .Disposition}}<span class="pill {{if eq (deref .Disposition) "ANSWERED"}}pill-ok{{else}}pill-warn{{end}}">{{deref .Disposition}}</span>{{else}}—{{end}}</td>
         <td class="muted">{{.HangupCause}}</td>
         <td>
@@ -59,6 +59,6 @@
       {{end}}
     </tbody>
   </table>
-  {{else}}<p class="muted">No calls yet. Once you wire up FreeSWITCH and place a call, CDRs land here via ESL.</p>{{end}}
+  {{else}}<p class="empty">No calls match these filters yet. Place a call and CDRs land here automatically.</p>{{end}}
 </section>
 {{end}}
