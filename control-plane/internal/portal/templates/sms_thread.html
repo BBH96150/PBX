@@ -1,0 +1,29 @@
+{{define "sms_thread_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{.Peer}} <span class="muted">↔ {{.Our}}</span></h1>
+  <a href="/admin/tenants/{{$t.ID}}/sms">← all conversations</a>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  {{if .Messages}}
+  <div style="display:flex;flex-direction:column;gap:0.4rem">
+    {{range .Messages}}
+    <div style="max-width:70%;{{if eq .Direction "outbound"}}align-self:flex-end;text-align:right{{else}}align-self:flex-start{{end}}">
+      <div style="display:inline-block;padding:0.4rem 0.7rem;border-radius:0.6rem;{{if eq .Direction "outbound"}}background:#2b3a55{{else}}background:#33373f{{end}}">{{.Body}}</div>
+      <div class="muted" style="font-size:0.75rem">{{.CreatedAt.Format "2006-01-02 15:04"}}{{if eq .Direction "outbound"}} · {{.Status}}{{end}}</div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}<p class="muted">No messages in this thread.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <form method="post" action="/admin/tenants/{{$t.ID}}/sms/send">
+    <input type="hidden" name="our" value="{{.Our}}">
+    <input type="hidden" name="peer" value="{{.Peer}}">
+    <label>Reply<textarea name="body" rows="2" required></textarea></label>
+    <button type="submit">Queue reply</button>
+  </form>
+</section>
+{{end}}

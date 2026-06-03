@@ -98,7 +98,7 @@ For real SIP calls (softphone register, real audio):
 These would be Phase 5+ work, multi-week each:
 
 - **WebRTC softphone** in the browser (SIP-over-WSS, Janus / drachtio / coturn TURN server)
-- **SMS** — outbound + inbound via carrier APIs (CallCentric supports SIP-SIMPLE; Telnyx/Bandwidth use REST), conversation views, MMS attachments
+- **SMS** — *foundation shipped* (Phase 5, migration 0027): `sms_messages` table, store, portal conversation view + outbound queue, and a `/v1/sms/inbound` webhook for FreeSWITCH to post received messages. **Carrier transport not wired** — needs mod_sms + a chatplan routing inbound SIP MESSAGE to the webhook and outbound via `chat`, plus CallCentric SIP-SIMPLE enabled on the trunk (needs a real SMS-capable trunk to build/test). Outbound stays `queued` until then. MMS not started.
 - **Video conferencing** — Jitsi or LiveKit integration
 - **Mobile apps** — iOS/Android with push-notification call wakeup (requires VoIP push via APNS/FCM)
 - **Number porting workflows**

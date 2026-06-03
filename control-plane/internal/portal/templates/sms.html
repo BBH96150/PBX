@@ -1,0 +1,51 @@
+{{define "sms_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} · Messages</h1>
+  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+
+<article class="contrast" style="font-size:0.88rem;margin-top:1rem">
+  SMS is in preview — the control-plane stores conversations and queues outbound
+  messages, but carrier delivery (SIP MESSAGE) isn't wired yet, so sent messages
+  stay <span class="pill">queued</span> until the SMS trunk is configured.
+</article>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Conversations <span class="muted">({{len .Conversations}})</span></h2>
+  {{if .Conversations}}
+  <table>
+    <thead><tr><th>With</th><th>On</th><th>Last message</th><th>When</th><th></th></tr></thead>
+    <tbody>
+      {{range .Conversations}}
+      <tr>
+        <td><code>{{.PeerE164}}</code></td>
+        <td class="muted"><code>{{.OurE164}}</code></td>
+        <td>{{if eq .LastDir "outbound"}}<span class="muted">→ </span>{{else}}<span class="muted">← </span>{{end}}{{.LastBody}}</td>
+        <td class="muted">{{.LastAt.Format "2006-01-02 15:04"}}</td>
+        <td><a href="/admin/tenants/{{$t.ID}}/sms/thread?our={{.OurE164}}&peer={{.PeerE164}}">Open →</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No messages yet.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>New message</h2>
+  {{if .DIDs}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/sms/send">
+    <label>From (your number)
+      <select name="our" required>
+        {{range .DIDs}}<option value="{{.E164}}">{{.E164}}</option>{{end}}
+      </select>
+    </label>
+    <label>To<input name="peer" placeholder="+14155551234" required></label>
+    <label>Message<textarea name="body" rows="3" required></textarea></label>
+    <button type="submit">Queue message</button>
+  </form>
+  {{else}}<p class="muted">Add a phone number first to send messages.</p>{{end}}
+</section>
+{{end}}

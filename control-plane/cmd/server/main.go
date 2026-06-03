@@ -190,6 +190,7 @@ func main() {
 	adminMux.Handle("/v1/freeswitch/dialplan", freeswitch.NewHandler(st, cfg.KamailioSIPTarget))
 	adminMux.Handle("/v1/freeswitch/directory", freeswitch.NewDirectoryHandler(st))
 	adminMux.Handle("/v1/freeswitch/configuration", freeswitch.NewConfigurationHandler(st, cfg.KamailioSIPTarget))
+	adminMux.Handle("/v1/sms/inbound", freeswitch.NewSMSInboundHandler(st))
 	adminMux.Handle("/healthz", adminAPI.Router())
 	adminMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
