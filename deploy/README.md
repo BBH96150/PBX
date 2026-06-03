@@ -14,9 +14,12 @@ Pushing to `main` runs `.github/workflows/ci.yml`. On success it runs the
 4. Pulls the `control-plane` image, runs `migrate up`, recreates `control-plane`.
 5. Smoke-checks `http://127.0.0.1:8080/healthz` on the box.
 
-The box's **base** `docker-compose.yml` is hand-maintained and is **not** synced
-from the repo. `deploy/prod-compose.snapshot.yml` is a version-controlled,
-secret-free capture of it (see that file's header for the divergences).
+The box's **base** `docker-compose.yml` is now repo-controlled:
+`deploy/docker-compose.prod-base.yml` is the source of truth, synced by the
+deploy (validated byte-identical to the live base at cutover, 2026-06-03). Edit
+that file to change prod infra; the deploy `--checksum`-syncs it and keeps a
+`.bak` for rollback. (`deploy/prod-compose.snapshot.yml` is the older,
+secret-scrubbed reference snapshot.)
 
 ## Ops
 
