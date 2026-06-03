@@ -233,7 +233,10 @@ jobs:
           docker compose -p sip-platform --profile tools run --rm migrate up
           echo "::endgroup::"
           echo "::group::restart"
-          docker compose -p sip-platform up -d --no-build control-plane
+          # --force-recreate: `up -d` after a `pull` does NOT reliably recreate
+          # control-plane when only the image digest changed (the :latest tag is
+          # unchanged), so code deploys could silently not take effect. Force it.
+          docker compose -p sip-platform up -d --no-build --force-recreate control-plane
           echo "::endgroup::"
           # Trim old image layers; keep the last 3 of our image.
           docker image prune -f --filter "label=org.opencontainers.image.source=https://github.com/BBH96150/PBX" >/dev/null || true
