@@ -2,6 +2,10 @@ module github.com/tendpos/sip-platform/control-plane
 
 go 1.25.0
 
+// Pin the build toolchain to 1.25.11, which patches two stdlib CVEs flagged by
+// govulncheck: GO-2026-5039 (net/textproto) and GO-2026-5037 (crypto/x509).
+toolchain go1.25.11
+
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/crewjam/saml v0.5.1
