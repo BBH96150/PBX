@@ -1,14 +1,10 @@
 {{define "tenant_saml_content"}}
 {{$t := .Tenant}}
 <div class="row">
-  <h1 style="margin:0">{{$t.Name}} · SAML 2.0</h1>
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· SAML 2.0</span></h1>
   <span class="muted">slug <code>{{$t.Slug}}</code></span>
 </div>
-
-<nav style="margin-top:0.25rem">
-  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a> ·
-  <a href="/admin/tenants/{{$t.ID}}/sso">OIDC SSO</a>
-</nav>
+{{template "tenant_subnav" .}}
 
 {{if not .KeyReady}}
 <article class="contrast" style="margin-top:1rem">

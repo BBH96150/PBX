@@ -342,6 +342,7 @@ func (s *Server) tenantSAMLGet(w http.ResponseWriter, r *http.Request) {
 		"HasOIDC":    hasOIDC,
 		"KeyReady":   s.samlKey != nil,
 		"PortalBase": s.portalBaseURL,
+		"NavActive":  "saml",
 	})
 }
 

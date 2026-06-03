@@ -230,9 +230,10 @@ func (s *Server) invitesList(w http.ResponseWriter, r *http.Request) {
 	}
 	invites, _ := s.store.ListInvitesForTenant(r.Context(), tid)
 	s.renderLayout(w, r, tenant.Name+" · Invites", "invites", map[string]any{
-		"Tenant":  tenant,
-		"Invites": invites,
-		"NewLink": r.URL.Query().Get("new"),
+		"Tenant":    tenant,
+		"Invites":   invites,
+		"NewLink":   r.URL.Query().Get("new"),
+		"NavActive": "invites",
 	})
 }
 

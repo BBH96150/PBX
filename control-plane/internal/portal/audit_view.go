@@ -26,6 +26,7 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 		"Entries":         entries,
 		"RequireVerified": requireVerified,
 		"Require2FA":      require2FA,
+		"NavActive":       "audit",
 	})
 }
 

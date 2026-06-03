@@ -309,6 +309,7 @@ func (s *Server) tenantSSOGet(w http.ResponseWriter, r *http.Request) {
 		"PortalBase":  s.portalBaseURL,
 		"Flash":       r.URL.Query().Get("flash"),
 		"FlashErr":    r.URL.Query().Get("err"),
+		"NavActive":   "sso",
 	})
 }
 
