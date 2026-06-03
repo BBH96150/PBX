@@ -97,6 +97,11 @@ jobs:
     name: Docker (multi-arch)
     runs-on: ubuntu-latest
     needs: [lint, test, migrations]
+    outputs:
+      # Immutable manifest digest of THIS build. The deploy job pulls by digest
+      # (not the shared :latest tag) so concurrent builds can't race a stale
+      # image onto the box.
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -117,7 +122,8 @@ jobs:
             type=ref,event=pr
             type=sha,format=short
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: control-plane
           platforms: linux/amd64,linux/arm64
@@ -222,20 +228,28 @@ jobs:
         env:
           HOST: ${{ secrets.CI_DEPLOY_HOST }}
           USER: ${{ secrets.CI_DEPLOY_USER }}
+          # Immutable, content-addressed ref for THIS commit's image. Falls back
+          # to :latest only if the digest output is somehow empty.
+          IMAGE_REF: ${{ env.IMAGE }}${{ needs.docker.outputs.digest && format('@{0}', needs.docker.outputs.digest) || ':latest' }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "IMAGE_REF='$IMAGE_REF' IMAGE='${{ env.IMAGE }}' bash -se" <<'EOF'
           set -euo pipefail
           cd /root/sip-platform
-          echo "::group::pull"
-          docker compose -p sip-platform pull control-plane
+          echo "::group::pull $IMAGE_REF"
+          # Pull the exact digest this build produced, then point local :latest at
+          # it. The box's compose references :latest, so this makes the running
+          # image deterministic regardless of registry :latest races between
+          # concurrent builds.
+          docker pull "$IMAGE_REF"
+          docker tag "$IMAGE_REF" "$IMAGE:latest"
           echo "::endgroup::"
           echo "::group::migrate"
           docker compose -p sip-platform --profile tools run --rm migrate up
           echo "::endgroup::"
           echo "::group::restart"
-          # --force-recreate: `up -d` after a `pull` does NOT reliably recreate
-          # control-plane when only the image digest changed (the :latest tag is
-          # unchanged), so code deploys could silently not take effect. Force it.
+          # --force-recreate: `up -d` after a re-tag does NOT reliably recreate
+          # control-plane when the :latest tag string is unchanged, so code
+          # deploys could silently not take effect. Force it.
           docker compose -p sip-platform up -d --no-build --force-recreate control-plane
           echo "::endgroup::"
           # Trim old image layers; keep the last 3 of our image.
