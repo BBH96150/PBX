@@ -13,6 +13,7 @@ secret:
   ignored-paths:
     - "docker-compose.yml"
     - "deploy/prod-compose.snapshot.yml"
+    - "deploy/docker-compose.prod-base.yml"
   ignored-matches:
     - name: "FreeSWITCH ESL dev default"
       match: "ClueCon"

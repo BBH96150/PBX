@@ -203,6 +203,27 @@ jobs:
             docker-compose.prod.yml \
             "$USER@$HOST:/root/sip-platform/docker-compose.override.yml"
 
+      - name: Validate prod base vs live (cutover dry-run, read-only)
+        # Phase 1 of the base-compose cutover: prove deploy/docker-compose.prod-base.yml
+        # is byte-identical to the box's live docker-compose.yml before we make it
+        # authoritative. Writes only a temp file; never replaces the live base.
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          rsync -avz -e "ssh -o IdentitiesOnly=yes" \
+            deploy/docker-compose.prod-base.yml \
+            "$USER@$HOST:/root/sip-platform/docker-compose.yml.candidate"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se <<'EOF'
+          cd /root/sip-platform
+          if diff -u docker-compose.yml docker-compose.yml.candidate; then
+            echo "BASE MATCHES — repo prod-base is byte-identical to the live base."
+          else
+            echo "::warning::repo prod-base DIFFERS from live base (diff above)."
+          fi
+          rm -f docker-compose.yml.candidate
+          EOF
+
       - name: Pull image, run migrations, restart control-plane
         env:
           HOST: ${{ secrets.CI_DEPLOY_HOST }}
