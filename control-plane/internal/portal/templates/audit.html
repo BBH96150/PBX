@@ -29,7 +29,10 @@
 </section>
 
 <section class="card" style="margin-top:1rem">
-  <h2>Recent events <span class="muted">({{len .Entries}})</span></h2>
+  <div class="row">
+    <h2 style="margin:0;border:0;padding:0">Recent events <span class="muted">({{len .Entries}})</span></h2>
+    {{if .Entries}}<a href="/admin/tenants/{{$t.ID}}/audit.csv" role="button" class="secondary btn-sm">⬇ Export CSV</a>{{end}}
+  </div>
   {{if .Entries}}
   <table>
     <thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>IP</th><th>Detail</th></tr></thead>
