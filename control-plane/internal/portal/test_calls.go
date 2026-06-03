@@ -127,7 +127,7 @@ func (s *Server) trunkTestOutbound(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit.Log(r.Context(), audit.Event{
 		TenantID: &tid, ActorTokenID: actorTok,
-		Event: "trunk.test_call.outbound",
+		Event:      "trunk.test_call.outbound",
 		TargetType: "carrier_account", TargetID: &acct.ID,
 		IPAddress: ip, UserAgent: ua,
 		Payload: map[string]any{"dest": normalized, "call_uuid": callUUID, "result": out},
@@ -216,7 +216,7 @@ func (s *Server) didTestInbound(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit.Log(r.Context(), audit.Event{
 		TenantID: &tid, ActorTokenID: actorTok,
-		Event: "did.test_call.inbound",
+		Event:      "did.test_call.inbound",
 		TargetType: "did", TargetID: &didID,
 		IPAddress: ip, UserAgent: ua,
 		Payload: map[string]any{"did": didE164, "call_uuid": callUUID, "result": out},

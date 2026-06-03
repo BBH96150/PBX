@@ -39,6 +39,7 @@ func (s *Server) outboundRoutesList(w http.ResponseWriter, r *http.Request) {
 		"Routes":    routes,
 		"Accounts":  accounts,
 		"AcctLabel": acctLabel,
+		"NavActive": "outbound",
 	})
 }
 

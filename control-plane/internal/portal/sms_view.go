@@ -28,6 +28,7 @@ func (s *Server) smsConversations(w http.ResponseWriter, r *http.Request) {
 		"Tenant":        tenant,
 		"Conversations": convos,
 		"DIDs":          dids,
+		"NavActive":     "sms",
 	})
 }
 

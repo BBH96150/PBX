@@ -1,9 +1,9 @@
 {{define "sms_content"}}
 {{$t := .Tenant}}
 <div class="row">
-  <h1 style="margin:0">{{$t.Name}} · Messages</h1>
-  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Messages</span></h1>
 </div>
+{{template "tenant_subnav" .}}
 
 {{if .Flash}}<article>{{.Flash}}</article>{{end}}
 

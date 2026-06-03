@@ -27,13 +27,13 @@ const (
 // ---------------------------------------------------------------------------
 
 type ssoState struct {
-	TenantID      uuid.UUID `json:"t"`
-	State         string    `json:"s"`
-	Nonce         string    `json:"n"`
-	PKCEVerifier  string    `json:"p"`
-	ReturnTo      string    `json:"r"`
-	Email         string    `json:"e,omitempty"` // hint from email-driven entry
-	ExpiresAt     int64     `json:"x"`
+	TenantID     uuid.UUID `json:"t"`
+	State        string    `json:"s"`
+	Nonce        string    `json:"n"`
+	PKCEVerifier string    `json:"p"`
+	ReturnTo     string    `json:"r"`
+	Email        string    `json:"e,omitempty"` // hint from email-driven entry
+	ExpiresAt    int64     `json:"x"`
 }
 
 func (s *Server) setSSOState(w http.ResponseWriter, st ssoState) {

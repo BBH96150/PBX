@@ -149,7 +149,7 @@ func (s *Server) handleAcceptInvitePost(w http.ResponseWriter, r *http.Request) 
 		s.render(w, "accept_invite", map[string]any{
 			"Token": token,
 			"Flash": inviteErrMsg(err),
-			"Bad":   errors.Is(err, store.ErrInvalidInviteToken) ||
+			"Bad": errors.Is(err, store.ErrInvalidInviteToken) ||
 				errors.Is(err, store.ErrInviteExpired) ||
 				errors.Is(err, store.ErrInviteUsed) ||
 				errors.Is(err, store.ErrInviteRevoked),

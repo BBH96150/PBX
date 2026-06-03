@@ -783,6 +783,7 @@ func (s *Server) tenantDetail(w http.ResponseWriter, r *http.Request) {
 	data["IVRs"], _ = listIVRs(ctx, s.store, tid)
 	data["Queues"], _ = listQueues(ctx, s.store, tid)
 	data["MoH"], _ = s.store.GetTenantMoH(ctx, tid)
+	data["NavActive"] = "overview"
 
 	s.renderLayout(w, r, tenant.Name, "tenant", data)
 }
@@ -997,6 +998,7 @@ func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
 		"Search":    filter.Search,
 		"Since":     q.Get("since"),
 		"Until":     q.Get("until"),
+		"NavActive": "cdrs",
 	})
 }
 

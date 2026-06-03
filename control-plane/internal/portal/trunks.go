@@ -77,6 +77,7 @@ func (s *Server) trunksList(w http.ResponseWriter, r *http.Request) {
 		"Accounts":          accounts,
 		"Carriers":          carriers,
 		"DIDCountByAccount": didCountByAccount,
+		"NavActive":         "trunks",
 	})
 }
 

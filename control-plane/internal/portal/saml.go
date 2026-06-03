@@ -31,7 +31,7 @@ const (
 
 type samlState struct {
 	TenantID  uuid.UUID `json:"t"`
-	RequestID string    `json:"r"`  // AuthnRequest ID for replay protection
+	RequestID string    `json:"r"` // AuthnRequest ID for replay protection
 	ReturnTo  string    `json:"u"`
 	Email     string    `json:"e,omitempty"`
 	ExpiresAt int64     `json:"x"`

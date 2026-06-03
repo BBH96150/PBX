@@ -1,19 +1,22 @@
 {{define "dashboard_content"}}
 <div class="row">
   <h1 style="margin:0">Tenants</h1>
+  <details style="margin:0">
+    <summary role="button" class="secondary btn-sm">+ New tenant</summary>
+    <form class="inline" method="post" action="/admin/tenants" style="margin-top:0.6rem">
+      <label>Slug<input name="slug" placeholder="acme" required></label>
+      <label>Name<input name="name" placeholder="Acme Corp" required></label>
+      <button type="submit">Create</button>
+    </form>
+  </details>
 </div>
 
-<section class="card" style="margin-top:1rem">
-  <h2>Create a tenant</h2>
-  <form class="inline" method="post" action="/admin/tenants">
-    <label>Slug<input name="slug" placeholder="acme" required></label>
-    <label>Name<input name="name" placeholder="Acme Corp" required></label>
-    <button type="submit">Create</button>
-  </form>
-</section>
+<div class="stats" style="margin:1rem 0">
+  <div class="stat"><div class="num">{{len .Tenants}}</div><div class="lbl">Tenants</div></div>
+</div>
 
-<section class="card" style="margin-top:1rem">
-  <h2>Existing</h2>
+<section class="card">
+  <h2>Workspaces</h2>
   {{if .Tenants}}
   <table>
     <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Created</th><th></th></tr></thead>
@@ -22,13 +25,13 @@
       <tr>
         <td><strong>{{.Name}}</strong></td>
         <td><code>{{.Slug}}</code></td>
-        <td><span class="pill pill-ok">{{.Status}}</span></td>
-        <td class="muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td>{{if eq .Status "active"}}<span class="pill pill-ok">{{.Status}}</span>{{else}}<span class="pill">{{.Status}}</span>{{end}}</td>
+        <td class="muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
         <td><a href="/admin/tenants/{{.ID}}">Open →</a></td>
       </tr>
       {{end}}
     </tbody>
   </table>
-  {{else}}<p class="muted">No tenants yet.</p>{{end}}
+  {{else}}<p class="empty">No tenants yet — create your first one above.</p>{{end}}
 </section>
 {{end}}

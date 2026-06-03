@@ -336,10 +336,10 @@ func (s *Server) twoFASetupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderLayout(w, r, "Set up authenticator", "twofa_setup", map[string]any{
-		"Label":      label,
-		"Secret":     key.Secret(), // shown for manual entry
-		"ProvURI":    key.URL(),
-		"QRDataURL":  template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png)),
+		"Label":     label,
+		"Secret":    key.Secret(), // shown for manual entry
+		"ProvURI":   key.URL(),
+		"QRDataURL": template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png)),
 	})
 }
 

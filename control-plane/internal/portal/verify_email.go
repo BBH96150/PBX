@@ -84,7 +84,7 @@ func (s *Server) verifyEmailGet(w http.ResponseWriter, r *http.Request) {
 func (s *Server) verifyEmailSent(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 	s.renderLayout(w, r, "Verify your email", "verify_email_sent", map[string]any{
-		"Email":          email,
+		"Email":            email,
 		"PortalConfigured": s.mailer != nil,
 	})
 }

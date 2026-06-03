@@ -34,6 +34,7 @@ func (s *Server) schedulesList(w http.ResponseWriter, r *http.Request) {
 	s.renderLayout(w, r, tenant.Name+" · Business hours", "schedules", map[string]any{
 		"Tenant":    tenant,
 		"Schedules": schedules,
+		"NavActive": "schedules",
 	})
 }
 

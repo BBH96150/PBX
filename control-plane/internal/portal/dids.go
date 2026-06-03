@@ -163,6 +163,7 @@ func (s *Server) didsList(w http.ResponseWriter, r *http.Request) {
 		"RowDest":    rowDest,
 		"HasDest":    len(destGroups) > 0,
 		"Schedules":  schedules,
+		"NavActive":  "dids",
 	})
 }
 

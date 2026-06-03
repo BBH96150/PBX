@@ -1,9 +1,9 @@
 {{define "cdrs_content"}}
 {{$t := .Tenant}}
 <div class="row">
-  <h1 style="margin:0">{{$t.Name}} · CDRs</h1>
-  <a href="/admin/tenants/{{$t.ID}}">← back to tenant</a>
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Calls</span></h1>
 </div>
+{{template "tenant_subnav" .}}
 
 <section class="card" style="margin-top:1rem">
   <form method="get" action="/admin/tenants/{{$t.ID}}/cdrs" class="inline">

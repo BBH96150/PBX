@@ -1,9 +1,9 @@
 {{define "schedules_content"}}
 {{$t := .Tenant}}
 <div class="row">
-  <h1 style="margin:0">{{$t.Name}} · Business hours</h1>
-  <a href="/admin/tenants/{{$t.ID}}">← back to {{$t.Name}}</a>
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Business hours</span></h1>
 </div>
+{{template "tenant_subnav" .}}
 
 <section class="card" style="margin-top:1rem">
   <h2>What this does</h2>

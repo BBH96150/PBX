@@ -5,10 +5,7 @@
   <span class="muted">inbound DID → destination routing</span>
 </div>
 
-<nav style="margin-top:0.25rem">
-  <a href="/admin/tenants/{{$t.ID}}">← Back to {{$t.Name}}</a> ·
-  <a href="/admin/tenants/{{$t.ID}}/trunks">Phone trunks</a>
-</nav>
+{{template "tenant_subnav" .}}
 
 <section class="card" style="margin-top:1rem">
   <h2>What this page does</h2>

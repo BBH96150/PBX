@@ -61,7 +61,7 @@ func (s *Server) softphoneCredentialsPost(w http.ResponseWriter, r *http.Request
 	ip, ua := audit.FromRequest(r)
 	s.audit.Log(r.Context(), audit.Event{
 		ActorUserID: &user.ID, ActorEmail: user.Email,
-		Event: "webphone.credentials.issued",
+		Event:      "webphone.credentials.issued",
 		TargetType: "extension", TargetID: &extID,
 		IPAddress: ip, UserAgent: ua,
 		Payload: map[string]any{"sip_username": creds.Username},
@@ -101,4 +101,3 @@ func stripPort(hostport string) string {
 	}
 	return hostport
 }
-

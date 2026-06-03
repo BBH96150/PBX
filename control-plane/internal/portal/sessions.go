@@ -26,9 +26,9 @@ func (s *Server) sessionsList(w http.ResponseWriter, r *http.Request) {
 		currentID = &id
 	}
 	s.renderLayout(w, r, "Active sessions", "sessions", map[string]any{
-		"User":            user,
-		"Sessions":        sessions,
-		"CurrentTokenID":  currentID,
+		"User":           user,
+		"Sessions":       sessions,
+		"CurrentTokenID": currentID,
 	})
 }
 
