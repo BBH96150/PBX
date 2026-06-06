@@ -131,6 +131,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/extensions", s.listExtensions)
 			r.Get("/cdrs", s.listCDRs)
 			r.Get("/contacts", s.listContacts)
+			r.Post("/contacts", RequireScope("write", s.createContact))
+			r.Delete("/contacts/{contactID}", RequireScope("write", s.deleteContact))
 			r.Post("/devices", s.createDevice)
 			r.Post("/dids", s.createDID)
 			r.Get("/dids", s.listDIDs)
