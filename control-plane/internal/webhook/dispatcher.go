@@ -83,9 +83,12 @@ func (d *Dispatcher) Fire(tenantID uuid.UUID, event string, payload map[string]a
 			return
 		}
 		for _, ep := range eps {
+			status, errMsg := "ok", ""
 			if err := d.DeliverOne(ctx, ep, event, payload); err != nil {
+				status, errMsg = "fail", err.Error()
 				slog.Warn("webhook delivery failed", "url", ep.URL, "event", event, "err", err)
 			}
+			_ = d.store.RecordWebhookDelivery(ctx, ep.ID, status, errMsg)
 		}
 	}()
 }

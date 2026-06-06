@@ -22,13 +22,19 @@
   <h2>Endpoints <span class="muted">({{len .Endpoints}})</span></h2>
   {{if .Endpoints}}
   <table>
-    <thead><tr><th>URL</th><th>Events</th><th>Signing secret</th><th>State</th><th></th></tr></thead>
+    <thead><tr><th>URL</th><th>Events</th><th>Signing secret</th><th>Last delivery</th><th>State</th><th></th></tr></thead>
     <tbody>
       {{range .Endpoints}}
       <tr>
         <td><code>{{.URL}}</code></td>
         <td>{{if .Events}}{{range .Events}}<span class="pill">{{.}}</span> {{end}}{{else}}<span class="muted">all events</span>{{end}}</td>
         <td><code style="font-size:0.78rem">{{.Secret}}</code></td>
+        <td>
+          {{if .LastAttemptAt}}
+            {{if eq (deref .LastStatus) "ok"}}<span class="pill pill-ok">ok</span>{{else}}<span class="pill pill-err" title="{{deref .LastError}}">fail</span>{{end}}
+            <span class="muted" style="font-size:0.78rem">{{.LastAttemptAt.Format "Jan 2 15:04"}}</span>
+          {{else}}<span class="muted">—</span>{{end}}
+        </td>
         <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
         <td>
           <form method="post" action="/admin/tenants/{{$t.ID}}/webhooks/{{.ID}}/test" style="display:inline;margin:0">
