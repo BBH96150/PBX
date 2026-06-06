@@ -1,0 +1,4 @@
+BEGIN;
+ALTER TABLE tenants DROP COLUMN IF EXISTS daily_digest;
+ALTER TABLE tenants DROP COLUMN IF EXISTS last_digest_on;
+COMMIT;

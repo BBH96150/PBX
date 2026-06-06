@@ -30,3 +30,27 @@ func (s *Server) tenantAlertEmailUpdate(w http.ResponseWriter, r *http.Request) 
 	s.auditNested(r, tid, "tenant.alert_email.set", "tenant", &tid, map[string]any{"set": email != ""})
 	http.Redirect(w, r, redirect+"?flash=Alert+recipient+updated.", http.StatusSeeOther)
 }
+
+// tenantDigestToggle enables/disables the opt-in daily call-summary email.
+func (s *Server) tenantDigestToggle(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	enabled := r.FormValue("enabled") == "true"
+	redirect := "/admin/tenants/" + tid.String() + "/reports"
+	if err := s.store.UpdateTenantDigest(r.Context(), tid, enabled); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, tid, "tenant.daily_digest.set", "tenant", &tid, map[string]any{"enabled": enabled})
+	msg := "Daily+summary+disabled."
+	if enabled {
+		msg = "Daily+summary+enabled+—+sent+each+morning+to+your+alert+recipients."
+	}
+	http.Redirect(w, r, redirect+"?flash="+msg, http.StatusSeeOther)
+}

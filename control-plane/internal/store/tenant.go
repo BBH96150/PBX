@@ -19,6 +19,7 @@ type Tenant struct {
 	BillingEmail string     `json:"billing_email,omitempty"`
 	BillingPhone string     `json:"billing_phone,omitempty"`
 	AlertEmail   string     `json:"alert_email,omitempty"`
+	DailyDigest  bool       `json:"daily_digest"`
 	TrialEndsAt  *time.Time `json:"trial_ends_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -102,16 +103,58 @@ func (s *Store) UpdateTenantAlertEmail(ctx context.Context, id uuid.UUID, email 
 	return err
 }
 
+// UpdateTenantDigest toggles the per-tenant daily call-summary digest.
+func (s *Store) UpdateTenantDigest(ctx context.Context, id uuid.UUID, enabled bool) error {
+	_, err := s.DB.Exec(ctx, `UPDATE tenants SET daily_digest = $2, updated_at = now() WHERE id = $1`, id, enabled)
+	return err
+}
+
+// DigestTenant is a tenant due for a daily digest, with its alert override.
+type DigestTenant struct {
+	ID         uuid.UUID
+	Name       string
+	AlertEmail string
+}
+
+// ListDigestTenantsDue returns digest-enabled tenants not yet sent today.
+func (s *Store) ListDigestTenantsDue(ctx context.Context, today time.Time) ([]DigestTenant, error) {
+	const q = `
+		SELECT id, name, COALESCE(alert_email,'')
+		  FROM tenants
+		 WHERE daily_digest = true AND status = 'active'
+		   AND (last_digest_on IS NULL OR last_digest_on < $1::date)`
+	rows, err := s.DB.Query(ctx, q, today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DigestTenant
+	for rows.Next() {
+		var d DigestTenant
+		if err := rows.Scan(&d.ID, &d.Name, &d.AlertEmail); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// MarkDigestSent records that a tenant's digest was sent for the given day.
+func (s *Store) MarkDigestSent(ctx context.Context, id uuid.UUID, day time.Time) error {
+	_, err := s.DB.Exec(ctx, `UPDATE tenants SET last_digest_on = $2::date WHERE id = $1`, id, day)
+	return err
+}
+
 func (s *Store) GetTenant(ctx context.Context, id uuid.UUID) (*Tenant, error) {
 	const q = `SELECT id, slug, name, status, plan,
 	                  COALESCE(billing_email::text,''), COALESCE(billing_phone,''),
-	                  COALESCE(alert_email,''),
+	                  COALESCE(alert_email,''), daily_digest,
 	                  trial_ends_at, created_at, updated_at
 	             FROM tenants WHERE id = $1`
 	var t Tenant
 	err := s.DB.QueryRow(ctx, q, id).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Status, &t.Plan,
-		&t.BillingEmail, &t.BillingPhone, &t.AlertEmail, &t.TrialEndsAt,
+		&t.BillingEmail, &t.BillingPhone, &t.AlertEmail, &t.DailyDigest, &t.TrialEndsAt,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {

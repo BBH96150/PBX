@@ -15,6 +15,7 @@ import (
 	"github.com/tendpos/sip-platform/control-plane/internal/audit"
 	"github.com/tendpos/sip-platform/control-plane/internal/config"
 	"github.com/tendpos/sip-platform/control-plane/internal/crypto"
+	"github.com/tendpos/sip-platform/control-plane/internal/digest"
 	"github.com/tendpos/sip-platform/control-plane/internal/freeswitch"
 	"github.com/tendpos/sip-platform/control-plane/internal/portal"
 	"github.com/tendpos/sip-platform/control-plane/internal/provisioning"
@@ -219,9 +220,10 @@ func main() {
 	prov := &http.Server{Addr: cfg.ProvisioningAddr, Handler: provServer.Router(), ReadHeaderTimeout: 5 * time.Second}
 
 	trunkMon := freeswitch.NewTrunkMonitor(st, gwProvisionerCore, mailer, webhookDispatcher, cfg.AlertEmail, 60*time.Second)
+	digestSender := digest.New(st, mailer, 13)
 
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 
 	go func() {
 		defer wg.Done()
@@ -254,6 +256,11 @@ func main() {
 	go func() {
 		defer wg.Done()
 		trunkMon.Run(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		digestSender.Run(ctx)
 	}()
 
 	_ = gwProvisioner // keep the variable in scope for the adapter; satisfied here.

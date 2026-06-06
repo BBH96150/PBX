@@ -6,6 +6,15 @@
 </div>
 {{template "tenant_subnav" .}}
 
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<form method="post" action="/admin/tenants/{{$t.ID}}/digest" class="toolbar" style="margin-top:1rem">
+  <label style="margin:0"><input type="hidden" name="enabled" value="{{if $t.DailyDigest}}false{{else}}true{{end}}"></label>
+  <span class="muted" style="font-size:0.85rem">Daily summary email: {{if $t.DailyDigest}}<span class="pill pill-ok">on</span>{{else}}<span class="pill">off</span>{{end}}</span>
+  <button type="submit" class="secondary btn-sm">{{if $t.DailyDigest}}Turn off{{else}}Turn on{{end}}</button>
+  <span class="muted" style="font-size:0.78rem">Emails yesterday's call summary to your trunk-alert recipients each morning.</span>
+</form>
+
 <div class="toolbar" style="margin-top:1rem">
   <span class="muted" style="font-size:0.85rem">Window:</span>
   <a href="?days=7" role="button" class="{{if ne .Days 7}}secondary {{end}}btn-sm">7 days</a>
