@@ -290,6 +290,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/audit", s.auditList)
 		r.Get("/tenants/{tenantID}/audit.csv", s.tenantAuditCSV)
 		r.Get("/tenants/{tenantID}/contacts", s.contactsList)
+		r.Get("/tenants/{tenantID}/contacts.csv", s.contactsCSV)
 		r.Post("/tenants/{tenantID}/contacts", s.contactCreate)
 		r.Post("/tenants/{tenantID}/contacts/{id}/delete", s.contactDelete)
 		r.Get("/tenants/{tenantID}/setup", s.tenantSetupCheck)

@@ -130,6 +130,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/extensions", s.createExtension)
 			r.Get("/extensions", s.listExtensions)
 			r.Get("/cdrs", s.listCDRs)
+			r.Get("/contacts", s.listContacts)
 			r.Post("/devices", s.createDevice)
 			r.Post("/dids", s.createDID)
 			r.Get("/dids", s.listDIDs)

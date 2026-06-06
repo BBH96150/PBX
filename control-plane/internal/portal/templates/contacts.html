@@ -13,6 +13,7 @@
     <form method="get" action="/admin/tenants/{{$t.ID}}/contacts" class="inline" style="margin:0">
       <input name="q" value="{{.Search}}" placeholder="Search name / number / company" style="margin:0;min-width:16rem" autocomplete="off">
       {{if .Search}}<a href="/admin/tenants/{{$t.ID}}/contacts" role="button" class="secondary btn-sm">Clear</a>{{end}}
+      {{if .Contacts}}<a href="/admin/tenants/{{$t.ID}}/contacts.csv?q={{.Search}}" role="button" class="secondary btn-sm">⬇ CSV</a>{{end}}
     </form>
   </div>
   {{if .Contacts}}

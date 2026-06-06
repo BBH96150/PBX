@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"encoding/csv"
 	"net/http"
 	"strings"
 
@@ -26,6 +27,26 @@ func (s *Server) contactsList(w http.ResponseWriter, r *http.Request) {
 		"Contacts":  contacts,
 		"Search":    search,
 	})
+}
+
+func (s *Server) contactsCSV(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.store.GetTenant(r.Context(), tid); err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	contacts, _ := s.store.ListContactsForTenant(r.Context(), tid, strings.TrimSpace(r.URL.Query().Get("q")))
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="directory.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"name", "number", "company", "notes"})
+	for _, c := range contacts {
+		_ = cw.Write([]string{csvSafe(c.Name), csvSafe(c.Number), csvSafe(c.Company), csvSafe(c.Notes)})
+	}
+	cw.Flush()
 }
 
 func (s *Server) contactCreate(w http.ResponseWriter, r *http.Request) {
