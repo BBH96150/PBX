@@ -18,6 +18,11 @@ type WebhookEndpoint struct {
 
 // CreateWebhookEndpoint inserts a new endpoint.
 func (s *Store) CreateWebhookEndpoint(ctx context.Context, tenantID uuid.UUID, url, secret string, events []string) (*WebhookEndpoint, error) {
+	// Never pass a nil slice — the column is NOT NULL and a nil would encode as
+	// SQL NULL. An empty array means "all events".
+	if events == nil {
+		events = []string{}
+	}
 	const q = `
 		INSERT INTO webhook_endpoints (tenant_id, url, secret, events)
 		VALUES ($1, $2, $3, $4)
