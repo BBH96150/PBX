@@ -13,6 +13,7 @@
   <a href="/admin/tenants/{{$t.ID}}/invites"{{if eq $a "invites"}} class="active"{{end}}>Team</a>
   <a href="/admin/tenants/{{$t.ID}}/sso"{{if eq $a "sso"}} class="active"{{end}}>OIDC</a>
   <a href="/admin/tenants/{{$t.ID}}/saml"{{if eq $a "saml"}} class="active"{{end}}>SAML</a>
+  <a href="/admin/tenants/{{$t.ID}}/webhooks"{{if eq $a "webhooks"}} class="active"{{end}}>Webhooks</a>
   <a href="/admin/tenants/{{$t.ID}}/audit"{{if eq $a "audit"}} class="active"{{end}}>Audit</a>
 </nav>
 {{end}}

@@ -48,6 +48,7 @@ type Server struct {
 	samlKey    *sso.SAMLKeypair
 	gwSyncer   GatewaySyncer
 	live       LiveMonitor
+	webhooks   WebhookDeliverer
 	originator CallOriginator
 	// portalBaseURL is the public origin for invite/reset links we email.
 	portalBaseURL string
@@ -86,6 +87,7 @@ type Options struct {
 	SAMLKey       *sso.SAMLKeypair // shared SP keypair; nil disables SAML routes
 	GatewaySyncer GatewaySyncer    // Phase 5.1: rewrites FS gateway XML + sofia rescan
 	LiveMonitor   LiveMonitor      // live call view: active calls + hangup via ESL
+	Webhooks      WebhookDeliverer // outbound webhook delivery (for the test button)
 	Originator    CallOriginator   // Phase 5.1: FS originate for test-call buttons
 
 	// Phase 5.1: SIP server connection info to display on extension credential
@@ -122,6 +124,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		samlKey:            opts.SAMLKey,
 		gwSyncer:           opts.GatewaySyncer,
 		live:               opts.LiveMonitor,
+		webhooks:           opts.Webhooks,
 		originator:         opts.Originator,
 		sipPublicHost:      opts.SIPPublicHost,
 		sipPublicPort:      opts.SIPPublicPort,
@@ -286,6 +289,10 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants/{tenantID}/live/hangup", s.liveHangup)
 		r.Get("/tenants/{tenantID}/audit", s.auditList)
 		r.Get("/tenants/{tenantID}/audit.csv", s.tenantAuditCSV)
+		r.Get("/tenants/{tenantID}/webhooks", s.webhooksList)
+		r.Post("/tenants/{tenantID}/webhooks", s.webhookCreate)
+		r.Post("/tenants/{tenantID}/webhooks/{id}/delete", s.webhookDelete)
+		r.Post("/tenants/{tenantID}/webhooks/{id}/test", s.webhookTest)
 		r.Post("/tenants/{tenantID}/security", s.tenantSecurityUpdate)
 
 		// Phase 4.7: 2FA enrollment + management + admin reset.

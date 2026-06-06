@@ -8,6 +8,7 @@ import (
 
 	"github.com/tendpos/sip-platform/control-plane/internal/smtp"
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
+	"github.com/tendpos/sip-platform/control-plane/internal/webhook"
 )
 
 // TrunkMonitor periodically checks every enabled, registering trunk's gateway
@@ -18,17 +19,18 @@ type TrunkMonitor struct {
 	store      *store.Store
 	gw         *GatewayProvisioner
 	mailer     smtp.Mailer
+	webhooks   *webhook.Dispatcher
 	alertEmail string
 	interval   time.Duration
 	states     map[string]string // fs_gateway_name -> last observed state
 }
 
-func NewTrunkMonitor(st *store.Store, gw *GatewayProvisioner, mailer smtp.Mailer, alertEmail string, interval time.Duration) *TrunkMonitor {
+func NewTrunkMonitor(st *store.Store, gw *GatewayProvisioner, mailer smtp.Mailer, wh *webhook.Dispatcher, alertEmail string, interval time.Duration) *TrunkMonitor {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
 	return &TrunkMonitor{
-		store: st, gw: gw, mailer: mailer, alertEmail: alertEmail,
+		store: st, gw: gw, mailer: mailer, webhooks: wh, alertEmail: alertEmail,
 		interval: interval, states: map[string]string{},
 	}
 }
@@ -98,6 +100,20 @@ func (m *TrunkMonitor) notify(ctx context.Context, a store.CarrierAccount, oldSt
 	slog.Warn("trunk alert",
 		"down", down, "tenant", name, "trunk", a.Name,
 		"gateway", a.FSGatewayName, "prev", oldState, "state", newState)
+
+	if a.TenantID != nil {
+		event := "trunk.up"
+		if down {
+			event = "trunk.down"
+		}
+		m.webhooks.Fire(*a.TenantID, event, map[string]any{
+			"trunk":      a.Name,
+			"carrier":    a.CarrierKind,
+			"gateway":    a.FSGatewayName,
+			"prev_state": oldState,
+			"state":      newState,
+		})
+	}
 
 	if m.alertEmail == "" || !m.mailer.Configured() {
 		return

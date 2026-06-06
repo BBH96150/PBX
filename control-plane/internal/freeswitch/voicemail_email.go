@@ -63,6 +63,15 @@ func (c *ESLClient) handleVoicemailLeaveMessage(ev eventLike) {
 		slog.Error("vm message insert", "err", err)
 	}
 
+	c.webhooks.Fire(box.TenantID, "voicemail.new", map[string]any{
+		"extension_id":   box.ExtensionID.String(),
+		"user":           user,
+		"domain":         domain,
+		"caller_id_num":  callerNum,
+		"caller_id_name": callerName,
+		"duration_sec":   durationSec,
+	})
+
 	if box.Email == "" {
 		return
 	}

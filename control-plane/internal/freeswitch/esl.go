@@ -17,6 +17,7 @@ import (
 
 	"github.com/tendpos/sip-platform/control-plane/internal/smtp"
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
+	"github.com/tendpos/sip-platform/control-plane/internal/webhook"
 )
 
 // ESLClient connects to FreeSWITCH's Event Socket and:
@@ -38,6 +39,7 @@ type ESLClient struct {
 	password       string
 	store          *store.Store
 	mailer         smtp.Mailer
+	webhooks       *webhook.Dispatcher
 	kamailioTarget string // for agent contact URI rendering during sync
 
 	conn atomic.Pointer[eslgo.Conn]
@@ -60,10 +62,10 @@ type ESLClient struct {
 // is established.
 var ErrNotConnected = errors.New("ESL not connected")
 
-func NewESLClient(host string, port int, password string, st *store.Store, mailer smtp.Mailer, kamailioTarget string) *ESLClient {
+func NewESLClient(host string, port int, password string, st *store.Store, mailer smtp.Mailer, wh *webhook.Dispatcher, kamailioTarget string) *ESLClient {
 	return &ESLClient{
 		host: host, port: port, password: password,
-		store: st, mailer: mailer, kamailioTarget: kamailioTarget,
+		store: st, mailer: mailer, webhooks: wh, kamailioTarget: kamailioTarget,
 	}
 }
 
@@ -247,4 +249,19 @@ func (c *ESLClient) handleCDR(event *eslgo.Event) {
 		"disposition", cdr.Disposition,
 		"hangup_cause", cdr.HangupCause,
 	)
+	if cdr.TenantID != nil {
+		c.webhooks.Fire(*cdr.TenantID, "call.completed", map[string]any{
+			"call_uuid":      cdr.CallUUID,
+			"direction":      cdr.Direction,
+			"from":           cdr.FromURI,
+			"to":             cdr.ToURI,
+			"caller_id_num":  cdr.CallerIDNum,
+			"caller_id_name": cdr.CallerIDName,
+			"started_at":     cdr.StartedAt.UTC().Format(time.RFC3339),
+			"duration_sec":   cdr.DurationSec,
+			"billable_sec":   cdr.BillableSec,
+			"disposition":    cdr.Disposition,
+			"hangup_cause":   cdr.HangupCause,
+		})
+	}
 }

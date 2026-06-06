@@ -22,6 +22,7 @@ import (
 	"github.com/tendpos/sip-platform/control-plane/internal/smtp"
 	"github.com/tendpos/sip-platform/control-plane/internal/sso"
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
+	"github.com/tendpos/sip-platform/control-plane/internal/webhook"
 )
 
 // rpsAdapter bridges *rps.Registry to api.RPSProvisioner so the api package
@@ -98,7 +99,8 @@ func main() {
 		From:        cfg.SMTPFrom,
 		UseSTARTTLS: cfg.SMTPUseSTARTTLS,
 	}
-	esl := freeswitch.NewESLClient(cfg.ESLHost, cfg.ESLPort, cfg.ESLPassword, st, mailer, cfg.KamailioSIPTarget)
+	webhookDispatcher := webhook.New(st)
+	esl := freeswitch.NewESLClient(cfg.ESLHost, cfg.ESLPort, cfg.ESLPassword, st, mailer, webhookDispatcher, cfg.KamailioSIPTarget)
 
 	// Task #10: RPS registry. Real Polycom adapter if creds are set;
 	// otherwise everything falls back to LogOnly.
@@ -174,6 +176,7 @@ func main() {
 		SAMLKey:              samlKey,
 		GatewaySyncer:        gwProvisioner,
 		LiveMonitor:          liveAdapter{inner: esl},
+		Webhooks:             webhookDispatcher,
 		Originator:           esl, // *ESLClient satisfies portal.CallOriginator via Originate
 		SIPPublicHost:        cfg.SIPPublicHost,
 		SIPPublicPort:        cfg.SIPPublicPort,
@@ -215,7 +218,7 @@ func main() {
 	admin := &http.Server{Addr: cfg.AdminAddr, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
 	prov := &http.Server{Addr: cfg.ProvisioningAddr, Handler: provServer.Router(), ReadHeaderTimeout: 5 * time.Second}
 
-	trunkMon := freeswitch.NewTrunkMonitor(st, gwProvisionerCore, mailer, cfg.AlertEmail, 60*time.Second)
+	trunkMon := freeswitch.NewTrunkMonitor(st, gwProvisionerCore, mailer, webhookDispatcher, cfg.AlertEmail, 60*time.Second)
 
 	var wg sync.WaitGroup
 	wg.Add(4)
