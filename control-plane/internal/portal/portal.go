@@ -209,6 +209,12 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.authRequired)
 		r.Use(s.require2FAEnrollment) // Phase 4.7 grace-mode enforcer
 		r.Get("/", s.dashboard)
+		// Self-service portal (owner-scoped; available to any authenticated user).
+		r.Get("/me", s.meHome)
+		r.Get("/me/extensions/{extensionID}", s.meExtension)
+		r.Post("/me/extensions/{extensionID}/features", s.meFeaturesUpdate)
+		r.Get("/me/extensions/{extensionID}/voicemail/{msgID}/audio", s.meVoicemailAudio)
+		r.Post("/me/extensions/{extensionID}/voicemail/{msgID}/delete", s.meVoicemailDelete)
 		r.Get("/ops/live", s.opsLive)
 		r.Get("/ops/live/fragment", s.opsLiveFragment)
 		r.Post("/switch-tenant", s.switchTenant)
@@ -257,6 +263,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/extensions/{extensionID}", s.extensionDetail)
 		r.Post("/extensions/{extensionID}/features", s.extensionFeaturesUpdate)
 		r.Post("/extensions/{extensionID}/rename", s.extensionRename)
+		r.Post("/extensions/{extensionID}/owner", s.extensionSetOwner)
 		r.Post("/extensions/{extensionID}/delete", s.extensionDelete)
 		r.Post("/extensions/{extensionID}/rotate-password", s.extensionRotatePassword)
 		r.Post("/extensions/{extensionID}/voicemail", s.extensionVoicemailCreate)
@@ -1206,6 +1213,8 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 		Search: ext.Extension,
 		Limit:  15,
 	})
+	// Self-service: tenant users for the owner picker.
+	tenantUsers, _ := s.store.ListUsersForTenant(r.Context(), ext.TenantID)
 	s.renderLayout(w, r, "Ext "+ext.Extension, "extension", map[string]any{
 		"Tenant":         tenant,
 		"Extension":      ext,
@@ -1218,7 +1227,53 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 		"RevealPassword": reveal,
 		"SIPPassword":    password,
 		"RecentCalls":    recentCalls,
+		"TenantUsers":    tenantUsers,
 	})
+}
+
+// extensionSetOwner assigns (or clears) the extension's owning user — the link
+// that lets that user manage this extension from the self-service portal.
+func (s *Server) extensionSetOwner(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		s.errPage(w, r, err)
+		return
+	}
+	if !s.canAccessTenant(r.Context(), ext.TenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", 400)
+		return
+	}
+	var ownerID *uuid.UUID
+	if v := strings.TrimSpace(r.FormValue("user_id")); v != "" {
+		uid, err := uuid.Parse(v)
+		if err != nil {
+			s.flashErr(w, r, "/admin/extensions/"+id.String(), err)
+			return
+		}
+		// Confirm the chosen user actually belongs to this tenant.
+		if _, err := s.store.GetMembership(r.Context(), uid, ext.TenantID); err != nil {
+			http.Error(w, "user is not a member of this workspace", http.StatusBadRequest)
+			return
+		}
+		ownerID = &uid
+	}
+	if err := s.store.SetExtensionUser(r.Context(), id, ownerID); err != nil {
+		s.flashErr(w, r, "/admin/extensions/"+id.String(), err)
+		return
+	}
+	s.auditNested(r, ext.TenantID, "extension.owner.set", "extension", &id, map[string]any{
+		"user_id": ownerID,
+	})
+	http.Redirect(w, r, "/admin/extensions/"+id.String()+"?flash=Owner+updated.", http.StatusSeeOther)
 }
 
 // extensionRotatePassword mints a new SIP password + HA1, audits, redirects

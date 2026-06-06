@@ -1,0 +1,201 @@
+package portal
+
+import (
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"github.com/tendpos/sip-platform/control-plane/internal/store"
+)
+
+// currentUser resolves the logged-in end-user from the session token, or nil.
+func (s *Server) currentUser(r *http.Request) *store.User {
+	tok := tokenFromCtx(r.Context())
+	if tok == nil {
+		return nil
+	}
+	u, _ := s.userFromSessionToken(r.Context(), tok)
+	return u
+}
+
+// ownedExtension resolves {extensionID} and hard-verifies that the logged-in
+// user OWNS it (extension.user_id == user.id). This is the only authorization
+// the self-service area relies on — never trust the URL id. Writes the HTTP
+// error itself and returns ok=false on any failure.
+func (s *Server) ownedExtension(w http.ResponseWriter, r *http.Request) (*store.Extension, *store.User, bool) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return nil, nil, false
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "extensionID"))
+	if err != nil {
+		http.Error(w, "bad extension id", http.StatusBadRequest)
+		return nil, nil, false
+	}
+	ext, err := s.lookupExtensionByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return nil, nil, false
+	}
+	if ext.UserID == nil || *ext.UserID != u.ID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, nil, false
+	}
+	return ext, u, true
+}
+
+// meHome lists the user's own extensions. One → straight to it; none → an empty
+// state; several → a chooser.
+func (s *Server) meHome(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+	exts, _ := s.store.FindOwnedExtensions(r.Context(), u.ID)
+	if len(exts) == 1 {
+		http.Redirect(w, r, "/admin/me/extensions/"+exts[0].ID.String(), http.StatusSeeOther)
+		return
+	}
+	s.renderLayout(w, r, "My extensions", "me", map[string]any{
+		"SelfService": true,
+		"Extensions":  exts,
+		"SessionUser": u,
+	})
+}
+
+// meExtension renders the self-service page for one owned extension.
+func (s *Server) meExtension(w http.ResponseWriter, r *http.Request) {
+	ext, _, ok := s.ownedExtension(w, r)
+	if !ok {
+		return
+	}
+	vmBox, _ := s.store.GetVoicemailBoxByExtensionID(r.Context(), ext.ID)
+	var vmMsgs []store.VoicemailMessage
+	if vmBox != nil {
+		vmMsgs, _ = s.store.ListVoicemailMessagesForBox(r.Context(), vmBox.ID)
+	}
+	recent, _ := s.store.ListCDRsFilteredForTenant(r.Context(), ext.TenantID, store.CDRFilter{
+		Search: ext.Extension,
+		Limit:  50,
+	})
+	s.renderLayout(w, r, "My extension", "me_extension", map[string]any{
+		"SelfService":   true,
+		"Extension":     ext,
+		"VoicemailBox":  vmBox,
+		"VoicemailMsgs": vmMsgs,
+		"RecentCalls":   recent,
+	})
+}
+
+// meFeaturesUpdate lets the owner change DND, call forwarding, and voicemail
+// on/off (not recording or SIP identity).
+func (s *Server) meFeaturesUpdate(w http.ResponseWriter, r *http.Request) {
+	ext, _, ok := s.ownedExtension(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	redirect := "/admin/me/extensions/" + ext.ID.String()
+	dnd := r.FormValue("dnd") == "true"
+	vm := r.FormValue("voicemail_enabled") == "true"
+	cfi := strings.TrimSpace(r.FormValue("cf_immediate"))
+	cfb := strings.TrimSpace(r.FormValue("cf_busy"))
+	cfn := strings.TrimSpace(r.FormValue("cf_no_answer"))
+	in := store.UpdateExtensionFeaturesInput{
+		DoNotDisturb:     &dnd,
+		VoicemailEnabled: &vm,
+		CFImmediate:      &cfi,
+		CFBusy:           &cfb,
+		CFNoAnswer:       &cfn,
+		// RecordingEnabled intentionally left nil — owners can't toggle recording.
+	}
+	if _, err := s.store.UpdateExtensionFeatures(r.Context(), ext.ID, in); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, ext.TenantID, "extension.features.self_update", "extension", &ext.ID, map[string]any{
+		"dnd": dnd, "voicemail": vm,
+	})
+	http.Redirect(w, r, redirect+"?flash=Settings+saved.", http.StatusSeeOther)
+}
+
+// meVoicemailAudio streams an owned voicemail message.
+func (s *Server) meVoicemailAudio(w http.ResponseWriter, r *http.Request) {
+	ext, _, ok := s.ownedExtension(w, r)
+	if !ok {
+		return
+	}
+	msg, ok := s.ownedVoicemailMessage(w, r, ext)
+	if !ok {
+		return
+	}
+	path, ok := s.safeVoicemailPath(msg.AudioPath)
+	if !ok {
+		http.Error(w, "recording unavailable", http.StatusNotFound)
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		http.Error(w, "recording not readable", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, "recording not readable", http.StatusNotFound)
+		return
+	}
+	_ = s.store.MarkVoicemailMessagePlayed(r.Context(), ext.TenantID, msg.ID)
+	w.Header().Set("Content-Type", contentTypeForAudioName(path))
+	w.Header().Set("Content-Disposition", "inline; filename=\""+filepath.Base(path)+"\"")
+	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
+}
+
+// meVoicemailDelete deletes an owned voicemail message.
+func (s *Server) meVoicemailDelete(w http.ResponseWriter, r *http.Request) {
+	ext, _, ok := s.ownedExtension(w, r)
+	if !ok {
+		return
+	}
+	msg, ok := s.ownedVoicemailMessage(w, r, ext)
+	if !ok {
+		return
+	}
+	redirect := "/admin/me/extensions/" + ext.ID.String()
+	if err := s.store.DeleteVoicemailMessageForTenant(r.Context(), ext.TenantID, msg.ID); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, ext.TenantID, "voicemail.message.self_deleted", "voicemail_message", &msg.ID, nil)
+	http.Redirect(w, r, redirect+"?flash=Message+deleted.", http.StatusSeeOther)
+}
+
+// ownedVoicemailMessage resolves {msgID} and verifies it belongs to the owned
+// extension's voicemail box (not merely the same tenant).
+func (s *Server) ownedVoicemailMessage(w http.ResponseWriter, r *http.Request, ext *store.Extension) (*store.VoicemailMessage, bool) {
+	msgID, err := uuid.Parse(chi.URLParam(r, "msgID"))
+	if err != nil {
+		http.Error(w, "bad message id", http.StatusBadRequest)
+		return nil, false
+	}
+	box, err := s.store.GetVoicemailBoxByExtensionID(r.Context(), ext.ID)
+	if err != nil || box == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return nil, false
+	}
+	msg, err := s.store.GetVoicemailMessageForTenant(r.Context(), ext.TenantID, msgID)
+	if err != nil || msg.BoxID != box.ID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, false
+	}
+	return msg, true
+}

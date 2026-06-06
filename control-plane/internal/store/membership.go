@@ -43,6 +43,40 @@ func (s *Store) ListMembershipsForUser(ctx context.Context, userID uuid.UUID) ([
 	return out, rows.Err()
 }
 
+// TenantUser is a lightweight member-of-tenant row for pickers (e.g. assigning
+// an extension owner).
+type TenantUser struct {
+	ID          uuid.UUID
+	Email       string
+	DisplayName string
+	Role        string
+}
+
+// ListUsersForTenant returns the active users who are members of a tenant,
+// ordered by display name (falling back to email).
+func (s *Store) ListUsersForTenant(ctx context.Context, tenantID uuid.UUID) ([]TenantUser, error) {
+	const q = `
+		SELECT u.id, u.email::text, COALESCE(u.display_name,''), m.role
+		  FROM user_tenant_memberships m
+		  JOIN users u ON u.id = m.user_id
+		 WHERE m.tenant_id = $1 AND u.status = 'active'
+		 ORDER BY COALESCE(NULLIF(u.display_name,''), u.email::text)`
+	rows, err := s.DB.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TenantUser
+	for rows.Next() {
+		var u TenantUser
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // GetMembership returns the (user, tenant) membership row if present.
 // Used by the tenant-switcher to confirm a user belongs to the target tenant.
 func (s *Store) GetMembership(ctx context.Context, userID, tenantID uuid.UUID) (*Membership, error) {

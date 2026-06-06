@@ -1,0 +1,79 @@
+{{define "me_extension_content"}}
+{{$e := .Extension}}
+<div class="row">
+  <h1 style="margin:0">Extension {{$e.Extension}} <span class="muted">— {{$e.DisplayName}}</span></h1>
+</div>
+
+{{if .Flash}}<article>{{.Flash}}</article>{{end}}
+{{if .FlashErr}}<article class="banner-warn">{{.FlashErr}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Call handling</h2>
+  <form method="post" action="/admin/me/extensions/{{$e.ID}}/features">
+    <label><input type="checkbox" name="dnd" value="true" {{if $e.DoNotDisturb}}checked{{end}}> Do not disturb (send all calls straight to voicemail/forward)</label>
+    <label>Forward all calls to
+      <input name="cf_immediate" value="{{$e.CFImmediate}}" placeholder="another extension or +E.164 (blank = off)">
+    </label>
+    <label>Forward when busy to
+      <input name="cf_busy" value="{{$e.CFBusy}}" placeholder="blank = off">
+    </label>
+    <label>Forward when no answer to
+      <input name="cf_no_answer" value="{{$e.CFNoAnswer}}" placeholder="blank = off">
+    </label>
+    <label><input type="checkbox" name="voicemail_enabled" value="true" {{if $e.VoicemailEnabled}}checked{{end}}> Voicemail enabled</label>
+    <button type="submit">Save settings</button>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Voicemail <span class="muted">({{len .VoicemailMsgs}})</span></h2>
+  {{if .VoicemailMsgs}}
+  <table>
+    <thead><tr><th>From</th><th>Received</th><th>Length</th><th></th><th></th></tr></thead>
+    <tbody>
+      {{range .VoicemailMsgs}}
+      <tr>
+        <td><code>{{.CallerIDNum}}</code>{{if .CallerIDName}} <span class="muted">{{.CallerIDName}}</span>{{end}} {{if eq .Status "new"}}<span class="pill pill-info">new</span>{{end}}</td>
+        <td class="muted">{{.ReceivedAt.Format "Jan 2, 15:04"}}</td>
+        <td>{{humandur .DurationSec}}</td>
+        <td>
+          <audio controls preload="none" style="height:1.8rem;vertical-align:middle">
+            <source src="/admin/me/extensions/{{$e.ID}}/voicemail/{{.ID}}/audio">
+          </audio>
+        </td>
+        <td>
+          <form method="post" action="/admin/me/extensions/{{$e.ID}}/voicemail/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Delete this voicemail?')">
+            <button type="submit" class="secondary btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else if .VoicemailBox}}
+  <p class="empty">No voicemail messages.</p>
+  {{else}}
+  <p class="muted">Voicemail isn't set up for this extension.</p>
+  {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Recent calls</h2>
+  {{if .RecentCalls}}
+  <table>
+    <thead><tr><th>When</th><th>Dir</th><th>From</th><th>To</th><th>Dur</th></tr></thead>
+    <tbody>
+      {{range .RecentCalls}}
+      <tr>
+        <td class="muted">{{.StartedAt.Format "Jan 2, 15:04"}}</td>
+        <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔ int</span>{{end}}</td>
+        <td><code>{{.CallerIDNum}}</code></td>
+        <td><code>{{.ToURI}}</code></td>
+        <td>{{humandur .DurationSec}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No recent calls.</p>{{end}}
+</section>
+{{end}}

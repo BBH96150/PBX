@@ -1,0 +1,24 @@
+{{define "me_content"}}
+<div class="row">
+  <h1 style="margin:0">My extensions</h1>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  {{if .Extensions}}
+  <table>
+    <thead><tr><th>Extension</th><th>Name</th><th></th></tr></thead>
+    <tbody>
+      {{range .Extensions}}
+      <tr>
+        <td><code>{{.Extension}}</code></td>
+        <td>{{.DisplayName}}</td>
+        <td><a href="/admin/me/extensions/{{.ID}}">Manage →</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">No extension is assigned to your account yet. Ask your administrator to assign one.</p>
+  {{end}}
+</section>
+{{end}}

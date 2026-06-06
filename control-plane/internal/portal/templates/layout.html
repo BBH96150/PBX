@@ -12,11 +12,17 @@
 <nav>
   <ul>
     <li><strong>SIP Platform</strong></li>
+    {{if .SelfService}}
+    <li><a href="/admin/me">My extension</a></li>
+    <li><a href="/admin/security/2fa">Security</a></li>
+    <li><a href="/admin/softphone">Softphone</a></li>
+    {{else}}
     <li><a href="/admin/">Tenants</a></li>
     {{if and .User (not .User.TenantID)}}<li><a href="/admin/ops/live">Live ops</a></li>{{end}}
     <li><a href="/admin/api-tokens">API tokens</a></li>
     <li><a href="/admin/security/2fa">Security</a></li>
     <li><a href="/admin/softphone">Softphone</a></li>
+    {{end}}
   </ul>
   <ul>
     {{if .Memberships}}

@@ -19,6 +19,21 @@
     </tbody>
   </table>
   <details style="margin-top:0.5rem">
+    <summary class="muted" style="cursor:pointer">Owner (self-service access){{if $e.UserID}} — assigned{{end}}</summary>
+    <form method="post" action="/admin/extensions/{{$e.ID}}/owner" style="margin-top:0.5rem">
+      <label>Owner
+        <select name="user_id">
+          <option value="">— none —</option>
+          {{range .TenantUsers}}
+          <option value="{{.ID}}"{{if $e.UserID}}{{if eq $e.UserID.String .ID.String}} selected{{end}}{{end}}>{{if .DisplayName}}{{.DisplayName}} ({{.Email}}){{else}}{{.Email}}{{end}}</option>
+          {{end}}
+        </select>
+      </label>
+      <button type="submit">Save owner</button>
+      <small class="muted">The owner can manage this extension's forwarding, DND, and voicemail from their self-service portal (/me). Invite the user first from the Team page.</small>
+    </form>
+  </details>
+  <details style="margin-top:0.5rem">
     <summary class="muted" style="cursor:pointer">Rename / delete</summary>
     <form method="post" action="/admin/extensions/{{$e.ID}}/rename" style="margin-top:0.5rem">
       <label>Display name<input name="display_name" value="{{$e.DisplayName}}" placeholder="Alice"></label>

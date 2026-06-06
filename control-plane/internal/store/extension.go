@@ -138,6 +138,21 @@ func (s *Store) UpdateExtensionDisplayName(ctx context.Context, id uuid.UUID, di
 	return nil
 }
 
+// SetExtensionUser assigns (or, with nil, clears) the owning user of an
+// extension — the link that powers the self-service portal.
+func (s *Store) SetExtensionUser(ctx context.Context, extID uuid.UUID, userID *uuid.UUID) error {
+	tag, err := s.DB.Exec(ctx,
+		`UPDATE extensions SET user_id = $2, updated_at = now() WHERE id = $1`,
+		extID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrExtensionNotFound
+	}
+	return nil
+}
+
 // ExtensionInboundDIDs returns the E.164 numbers of any DIDs that route
 // directly to this extension. Used to block deletion until they're reassigned
 // (dids.destination_id is not an FK, so a delete would silently orphan them).
