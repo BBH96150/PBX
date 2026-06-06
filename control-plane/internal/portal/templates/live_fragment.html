@@ -17,6 +17,17 @@
     {{range .Online}}<span class="pill pill-ok" style="margin-right:0.2rem"><code>{{.}}</code></span>{{end}}
   </p>
   {{end}}
+
+  {{if and .TrunksOK .Trunks}}
+  <p style="margin:0 0 0.6rem">
+    <span class="muted" style="font-size:0.82rem">Trunks {{.TrunkReg}}/{{.TrunkExp}} registered:</span>
+    {{range .Trunks}}
+      {{if .Registered}}<span class="pill pill-ok" style="margin-right:0.2rem">{{.Name}} REGED</span>
+      {{else if .Expected}}<span class="pill pill-warn" style="margin-right:0.2rem">{{.Name}} {{.State}}</span>
+      {{else}}<span class="pill" style="margin-right:0.2rem">{{.Name}} {{.State}}</span>{{end}}
+    {{end}}
+  </p>
+  {{end}}
   {{if .Calls}}
   <table>
     <thead><tr><th>Dir</th><th>From</th><th>To</th><th>State</th><th>Duration</th><th></th></tr></thead>

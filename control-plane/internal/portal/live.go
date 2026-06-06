@@ -103,6 +103,53 @@ func (s *Server) tenantPresence(ctx context.Context, set map[string]struct{}) (o
 	return online, true
 }
 
+// trunkView is the render model for one trunk's live registration state.
+type trunkView struct {
+	Name       string
+	Carrier    string
+	State      string // REGED / FAIL_WAIT / TRYING / unknown / disabled / no-register
+	Registered bool
+	Expected   bool // a registering, enabled trunk (counts toward the summary)
+}
+
+// tenantTrunkStatus returns each trunk's live registration state plus how many
+// of the registering trunks are currently REGED. ok is false when no gateway
+// syncer is wired. Each lookup degrades on its own if FS is unreachable.
+func (s *Server) tenantTrunkStatus(ctx context.Context, tid uuid.UUID) (views []trunkView, regN, expectedN int, ok bool) {
+	if s.gwSyncer == nil {
+		return nil, 0, 0, false
+	}
+	accts, err := s.store.ListCarrierAccountsForTenant(ctx, tid)
+	if err != nil {
+		return nil, 0, 0, false
+	}
+	for _, a := range accts {
+		tv := trunkView{Name: a.Name, Carrier: a.CarrierKind}
+		switch {
+		case !a.Enabled:
+			tv.State = "disabled"
+		case !a.Register:
+			tv.State = "no-register"
+		default:
+			tv.Expected = true
+			expectedN++
+			cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			st := s.gwSyncer.GatewayStatus(cctx, a.FSGatewayName)
+			cancel()
+			tv.State = st.State
+			if tv.State == "" {
+				tv.State = "unknown"
+			}
+			tv.Registered = st.State == "REGED"
+			if tv.Registered {
+				regN++
+			}
+		}
+		views = append(views, tv)
+	}
+	return views, regN, expectedN, true
+}
+
 func (s *Server) liveDashboard(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
 	if !ok {
@@ -128,6 +175,7 @@ func (s *Server) liveFragment(w http.ResponseWriter, r *http.Request) {
 	calls, fsUp := s.scopedActiveCalls(r.Context(), set)
 	online, presenceUp := s.tenantPresence(r.Context(), set)
 	total := len(mustExtensions(r.Context(), s.store, tid))
+	trunks, trunkReg, trunkExp, trunksOK := s.tenantTrunkStatus(r.Context(), tid)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpls.ExecuteTemplate(w, "live_fragment", map[string]any{
 		"TenantID":   tid,
@@ -138,6 +186,10 @@ func (s *Server) liveFragment(w http.ResponseWriter, r *http.Request) {
 		"OnlineN":    len(online),
 		"TotalExt":   total,
 		"PresenceUp": presenceUp,
+		"Trunks":     trunks,
+		"TrunkReg":   trunkReg,
+		"TrunkExp":   trunkExp,
+		"TrunksOK":   trunksOK,
 	}); err != nil {
 		slog.Error("live fragment render", "err", err)
 	}
