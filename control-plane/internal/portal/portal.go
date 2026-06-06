@@ -1705,35 +1705,8 @@ func humandur(v any) string {
 // ---------------------------------------------------------------------------
 
 func mustExtensions(ctx context.Context, st *store.Store, tid uuid.UUID) []store.Extension {
-	const q = `
-		SELECT e.id, e.tenant_id, e.sip_domain_id, e.extension, e.sip_username,
-		       '', e.user_id, COALESCE(e.display_name,''),
-		       e.voicemail_enabled,
-		       e.do_not_disturb, COALESCE(e.cf_immediate,''), COALESCE(e.cf_busy,''),
-		       COALESCE(e.cf_no_answer,''), e.recording_enabled,
-		       e.status, e.created_at, e.updated_at
-		  FROM extensions e
-		 WHERE e.tenant_id = $1 AND e.status = 'active'
-		 ORDER BY e.extension`
-	rows, err := st.DB.Query(ctx, q, tid)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []store.Extension
-	for rows.Next() {
-		var e store.Extension
-		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.SIPDomainID, &e.Extension, &e.SIPUsername,
-			&e.SIPPassword, &e.UserID, &e.DisplayName,
-			&e.VoicemailEnabled,
-			&e.DoNotDisturb, &e.CFImmediate, &e.CFBusy, &e.CFNoAnswer, &e.RecordingEnabled,
-			&e.Status, &e.CreatedAt, &e.UpdatedAt,
-		); err == nil {
-			out = append(out, e)
-		}
-	}
-	return out
+	exts, _ := st.ListExtensionsForTenant(ctx, tid)
+	return exts
 }
 
 func mustDevices(ctx context.Context, st *store.Store, tid uuid.UUID) []store.Device {

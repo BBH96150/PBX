@@ -128,6 +128,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/", s.getTenant)
 			r.Post("/sip-domains", s.createSIPDomain)
 			r.Post("/extensions", s.createExtension)
+			r.Get("/extensions", s.listExtensions)
+			r.Get("/cdrs", s.listCDRs)
 			r.Post("/devices", s.createDevice)
 			r.Post("/dids", s.createDID)
 			r.Get("/dids", s.listDIDs)

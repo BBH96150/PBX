@@ -138,6 +138,40 @@ func (s *Store) UpdateExtensionDisplayName(ctx context.Context, id uuid.UUID, di
 	return nil
 }
 
+// ListExtensionsForTenant returns a tenant's active extensions.
+func (s *Store) ListExtensionsForTenant(ctx context.Context, tenantID uuid.UUID) ([]Extension, error) {
+	const q = `
+		SELECT e.id, e.tenant_id, e.sip_domain_id, e.extension, e.sip_username,
+		       '', e.user_id, COALESCE(e.display_name,''),
+		       e.voicemail_enabled,
+		       e.do_not_disturb, COALESCE(e.cf_immediate,''), COALESCE(e.cf_busy,''),
+		       COALESCE(e.cf_no_answer,''), e.recording_enabled,
+		       e.status, e.created_at, e.updated_at
+		  FROM extensions e
+		 WHERE e.tenant_id = $1 AND e.status = 'active'
+		 ORDER BY e.extension`
+	rows, err := s.DB.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Extension
+	for rows.Next() {
+		var e Extension
+		if err := rows.Scan(
+			&e.ID, &e.TenantID, &e.SIPDomainID, &e.Extension, &e.SIPUsername,
+			&e.SIPPassword, &e.UserID, &e.DisplayName,
+			&e.VoicemailEnabled,
+			&e.DoNotDisturb, &e.CFImmediate, &e.CFBusy, &e.CFNoAnswer, &e.RecordingEnabled,
+			&e.Status, &e.CreatedAt, &e.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // SetExtensionUser assigns (or, with nil, clears) the owning user of an
 // extension — the link that powers the self-service portal.
 func (s *Store) SetExtensionUser(ctx context.Context, extID uuid.UUID, userID *uuid.UUID) error {
