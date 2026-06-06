@@ -28,6 +28,7 @@ type CDR struct {
 	HangupCause   string
 	CarrierID     *uuid.UUID
 	RecordingPath string
+	Note          string
 	Raw           map[string]string
 }
 
@@ -43,7 +44,7 @@ func (s *Store) ListCDRsForTenant(ctx context.Context, tenantID uuid.UUID, limit
 		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
 		       started_at, answered_at, ended_at,
 		       duration_sec, billable_sec, disposition,
-		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''),
+		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), COALESCE(note,''),
 		       raw
 		  FROM cdrs WHERE tenant_id = $1
 		 ORDER BY started_at DESC LIMIT $2`
@@ -61,7 +62,7 @@ func (s *Store) ListCDRsForTenant(ctx context.Context, tenantID uuid.UUID, limit
 			&c.CallerIDNum, &c.CallerIDName,
 			&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
 			&c.DurationSec, &c.BillableSec, &c.Disposition,
-			&c.HangupCause, &c.CarrierID, &c.RecordingPath,
+			&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note,
 			&rawJSON,
 		); err != nil {
 			return nil, err
@@ -141,7 +142,7 @@ func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUI
 		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
 		       started_at, answered_at, ended_at,
 		       duration_sec, billable_sec, disposition,
-		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''),
+		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), COALESCE(note,''),
 		       raw
 		  FROM cdrs
 		 WHERE tenant_id = $1
@@ -166,7 +167,7 @@ func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUI
 			&c.CallerIDNum, &c.CallerIDName,
 			&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
 			&c.DurationSec, &c.BillableSec, &c.Disposition,
-			&c.HangupCause, &c.CarrierID, &c.RecordingPath,
+			&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note,
 			&rawJSON,
 		); err != nil {
 			return nil, err
@@ -184,7 +185,7 @@ func (s *Store) GetCDRForTenant(ctx context.Context, tenantID, cdrID uuid.UUID) 
 		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
 		       started_at, answered_at, ended_at,
 		       duration_sec, billable_sec, disposition,
-		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), raw
+		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), COALESCE(note,''), raw
 		  FROM cdrs WHERE id = $1 AND tenant_id = $2`
 	var c CDR
 	var rawJSON []byte
@@ -193,12 +194,19 @@ func (s *Store) GetCDRForTenant(ctx context.Context, tenantID, cdrID uuid.UUID) 
 		&c.CallerIDNum, &c.CallerIDName,
 		&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
 		&c.DurationSec, &c.BillableSec, &c.Disposition,
-		&c.HangupCause, &c.CarrierID, &c.RecordingPath, &rawJSON,
+		&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note, &rawJSON,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// SetCDRNote sets (or clears, with "") a free-text note/tag on a call record.
+func (s *Store) SetCDRNote(ctx context.Context, tenantID, cdrID uuid.UUID, note string) error {
+	_, err := s.DB.Exec(ctx,
+		`UPDATE cdrs SET note = NULLIF($3,'') WHERE id = $1 AND tenant_id = $2`, cdrID, tenantID, note)
+	return err
 }
 
 // ClearCDRRecording blanks a CDR's recording_path (after the file is deleted),

@@ -230,6 +230,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/reports", s.reportsView)
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
 		r.Get("/tenants/{tenantID}/cdrs.csv", s.tenantCDRsCSV)
+		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/note", s.tenantCDRNote)
 		r.Get("/tenants/{tenantID}/cdrs/{cdrID}/recording", s.cdrRecordingAudio)
 		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/recording/delete", s.cdrRecordingDelete)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
@@ -1144,7 +1145,7 @@ func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="call-log.csv"`)
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"started_at", "direction", "from", "to", "caller_id_num", "caller_id_name", "duration_sec", "billable_sec", "disposition", "hangup_cause"})
+	_ = cw.Write([]string{"started_at", "direction", "from", "to", "caller_id_num", "caller_id_name", "duration_sec", "billable_sec", "disposition", "hangup_cause", "note"})
 	intStr := func(p *int) string {
 		if p == nil {
 			return ""
@@ -1159,10 +1160,38 @@ func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
 		_ = cw.Write([]string{
 			c.StartedAt.UTC().Format(time.RFC3339), c.Direction, csvSafe(c.FromURI), csvSafe(c.ToURI),
 			csvSafe(c.CallerIDNum), csvSafe(c.CallerIDName), intStr(c.DurationSec), intStr(c.BillableSec),
-			disp, csvSafe(c.HangupCause),
+			disp, csvSafe(c.HangupCause), csvSafe(c.Note),
 		})
 	}
 	cw.Flush()
+}
+
+// tenantCDRNote sets/clears a free-text note on a call record.
+func (s *Server) tenantCDRNote(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	cdrID, err := uuid.Parse(chi.URLParam(r, "cdrID"))
+	if err != nil {
+		http.Error(w, "bad cdr id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	note := strings.TrimSpace(r.FormValue("note"))
+	if err := s.store.SetCDRNote(r.Context(), tid, cdrID, note); err != nil {
+		s.flashErr(w, r, "/admin/tenants/"+tid.String()+"/cdrs", err)
+		return
+	}
+	s.auditNested(r, tid, "cdr.note.set", "cdr", &cdrID, nil)
+	dest := r.Referer()
+	if dest == "" {
+		dest = "/admin/tenants/" + tid.String() + "/cdrs"
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // tenantExtensionsCSV streams the tenant's active extensions as a CSV — a

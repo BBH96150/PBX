@@ -31,7 +31,7 @@
     <thead>
       <tr>
         <th>Started</th><th>Dir</th><th>From</th><th>To</th>
-        <th>Dur</th><th>Billed</th><th>Disp</th><th>Cause</th><th>Recording</th>
+        <th>Dur</th><th>Billed</th><th>Disp</th><th>Cause</th><th>Recording</th><th>Note</th>
       </tr>
     </thead>
     <tbody>
@@ -55,6 +55,12 @@
             <button type="submit" class="secondary" style="padding:0.1rem 0.4rem;font-size:0.78rem">✕</button>
           </form>
           {{else}}—{{end}}
+        </td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/cdrs/{{.ID}}/note" style="margin:0;display:flex;gap:0.2rem">
+            <input name="note" value="{{.Note}}" placeholder="note / tag" style="margin:0;font-size:0.8rem;min-width:7rem;padding:0.15rem 0.4rem">
+            <button type="submit" class="secondary" style="padding:0.15rem 0.4rem;font-size:0.78rem">✓</button>
+          </form>
         </td>
       </tr>
       {{end}}
