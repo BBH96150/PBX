@@ -1,0 +1,51 @@
+{{define "contacts_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Directory</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <div class="row">
+    <h2 style="margin:0;border:0;padding:0">Contacts <span class="muted">({{len .Contacts}})</span></h2>
+    <form method="get" action="/admin/tenants/{{$t.ID}}/contacts" class="inline" style="margin:0">
+      <input name="q" value="{{.Search}}" placeholder="Search name / number / company" style="margin:0;min-width:16rem" autocomplete="off">
+      {{if .Search}}<a href="/admin/tenants/{{$t.ID}}/contacts" role="button" class="secondary btn-sm">Clear</a>{{end}}
+    </form>
+  </div>
+  {{if .Contacts}}
+  <table>
+    <thead><tr><th>Name</th><th>Number</th><th>Company</th><th>Notes</th><th></th></tr></thead>
+    <tbody>
+      {{range .Contacts}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td><code>{{.Number}}</code></td>
+        <td>{{.Company}}</td>
+        <td class="muted">{{.Notes}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/contacts/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Remove {{.Name}} from the directory?')">
+            <button type="submit" class="secondary btn-sm">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else if .Search}}<p class="empty">No contacts match “{{.Search}}”.</p>
+  {{else}}<p class="empty">No contacts yet — add one below.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a contact</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/contacts">
+    <label>Name<input name="name" required></label>
+    <label>Number<input name="number" placeholder="+14155551234 or extension" required></label>
+    <label>Company<input name="company" placeholder="(optional)"></label>
+    <label>Notes<input name="notes" placeholder="(optional)"></label>
+    <button type="submit">Add contact</button>
+  </form>
+</section>
+{{end}}
