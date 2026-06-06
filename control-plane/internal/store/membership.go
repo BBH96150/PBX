@@ -77,6 +77,30 @@ func (s *Store) ListUsersForTenant(ctx context.Context, tenantID uuid.UUID) ([]T
 	return out, rows.Err()
 }
 
+// ListAdminEmailsForTenant returns the emails of a tenant's active admin
+// (tenant_admin) members — the default recipients for operational alerts.
+func (s *Store) ListAdminEmailsForTenant(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
+	const q = `
+		SELECT u.email::text
+		  FROM user_tenant_memberships m
+		  JOIN users u ON u.id = m.user_id
+		 WHERE m.tenant_id = $1 AND m.role = 'tenant_admin' AND u.status = 'active'`
+	rows, err := s.DB.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // GetMembership returns the (user, tenant) membership row if present.
 // Used by the tenant-switcher to confirm a user belongs to the target tenant.
 func (s *Store) GetMembership(ctx context.Context, userID, tenantID uuid.UUID) (*Membership, error) {

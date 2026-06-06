@@ -4,8 +4,7 @@
   <h1 style="margin:0">Extension {{$e.Extension}} <span class="muted">— {{$e.DisplayName}}</span></h1>
 </div>
 
-{{if .Flash}}<article>{{.Flash}}</article>{{end}}
-{{if .FlashErr}}<article class="banner-warn">{{.FlashErr}}</article>{{end}}
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn"{{end}}>{{.Flash}}</article>{{end}}
 
 <section class="card" style="margin-top:1rem">
   <h2>Call handling</h2>

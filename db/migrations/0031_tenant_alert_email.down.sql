@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE tenants DROP COLUMN IF EXISTS alert_email;
+COMMIT;

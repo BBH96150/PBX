@@ -5,8 +5,7 @@
 </div>
 {{template "tenant_subnav" .}}
 
-{{if .Flash}}<article style="margin-top:1rem">{{.Flash}}</article>{{end}}
-{{if .FlashErr}}<article class="banner-warn" style="margin-top:1rem">{{.FlashErr}}</article>{{end}}
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
 
 <section class="card" style="margin-top:1rem">
   <h2>What this does</h2>

@@ -6,6 +6,22 @@
 </div>
 {{template "tenant_subnav" .}}
 
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Trunk alert recipient</h2>
+  <p class="muted" style="font-size:0.9rem;margin-top:0">
+    Where this workspace's trunk down/recovery alerts are emailed. Leave blank to
+    send to this workspace's admins automatically.
+  </p>
+  <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/alert-email">
+    <label>Alert email
+      <input name="alert_email" type="email" value="{{$t.AlertEmail}}" placeholder="(blank = workspace admins)" style="min-width:20rem">
+    </label>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
 <section class="card" style="margin-top:1rem">
   <h2>What's a trunk?</h2>
   <p class="muted" style="font-size:0.9rem">

@@ -18,6 +18,7 @@ type Tenant struct {
 	Plan         string     `json:"plan"`
 	BillingEmail string     `json:"billing_email,omitempty"`
 	BillingPhone string     `json:"billing_phone,omitempty"`
+	AlertEmail   string     `json:"alert_email,omitempty"`
 	TrialEndsAt  *time.Time `json:"trial_ends_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -92,15 +93,25 @@ func (s *Store) GetTenantBySlug(ctx context.Context, slug string) (*Tenant, erro
 	return &t, nil
 }
 
+// UpdateTenantAlertEmail sets (or clears, with "") the per-tenant alert
+// recipient override.
+func (s *Store) UpdateTenantAlertEmail(ctx context.Context, id uuid.UUID, email string) error {
+	_, err := s.DB.Exec(ctx,
+		`UPDATE tenants SET alert_email = NULLIF($2,''), updated_at = now() WHERE id = $1`,
+		id, email)
+	return err
+}
+
 func (s *Store) GetTenant(ctx context.Context, id uuid.UUID) (*Tenant, error) {
 	const q = `SELECT id, slug, name, status, plan,
 	                  COALESCE(billing_email::text,''), COALESCE(billing_phone,''),
+	                  COALESCE(alert_email,''),
 	                  trial_ends_at, created_at, updated_at
 	             FROM tenants WHERE id = $1`
 	var t Tenant
 	err := s.DB.QueryRow(ctx, q, id).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Status, &t.Plan,
-		&t.BillingEmail, &t.BillingPhone, &t.TrialEndsAt,
+		&t.BillingEmail, &t.BillingPhone, &t.AlertEmail, &t.TrialEndsAt,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {

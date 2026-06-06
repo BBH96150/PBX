@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/tendpos/sip-platform/control-plane/internal/smtp"
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
 	"github.com/tendpos/sip-platform/control-plane/internal/webhook"
@@ -89,9 +91,11 @@ func (m *TrunkMonitor) check(ctx context.Context) {
 
 func (m *TrunkMonitor) notify(ctx context.Context, a store.CarrierAccount, oldState, newState string, down bool) {
 	name := "—"
+	var tenantAlertEmail string
 	if a.TenantID != nil {
 		if t, err := m.store.GetTenant(ctx, *a.TenantID); err == nil {
 			name = t.Name
+			tenantAlertEmail = t.AlertEmail
 		}
 	}
 	if oldState == "" {
@@ -115,7 +119,11 @@ func (m *TrunkMonitor) notify(ctx context.Context, a store.CarrierAccount, oldSt
 		})
 	}
 
-	if m.alertEmail == "" || !m.mailer.Configured() {
+	if !m.mailer.Configured() {
+		return
+	}
+	recipients := m.alertRecipients(ctx, a.TenantID, tenantAlertEmail)
+	if len(recipients) == 0 {
 		return
 	}
 	var subject string
@@ -129,7 +137,27 @@ func (m *TrunkMonitor) notify(ctx context.Context, a store.CarrierAccount, oldSt
 		name, a.Name, a.CarrierKind, a.FSGatewayName, oldState, newState,
 		time.Now().UTC().Format(time.RFC1123),
 	)
-	if err := m.mailer.Send(m.alertEmail, subject, body, nil); err != nil {
-		slog.Error("trunk alert email", "to", m.alertEmail, "err", err)
+	for _, to := range recipients {
+		if err := m.mailer.Send(to, subject, body, nil); err != nil {
+			slog.Error("trunk alert email", "to", to, "err", err)
+		}
 	}
+}
+
+// alertRecipients resolves who gets a tenant's trunk alerts, in priority order:
+// the per-tenant override address, else the tenant's admins, else the global
+// ALERT_EMAIL fallback.
+func (m *TrunkMonitor) alertRecipients(ctx context.Context, tenantID *uuid.UUID, override string) []string {
+	if override != "" {
+		return []string{override}
+	}
+	if tenantID != nil {
+		if admins, err := m.store.ListAdminEmailsForTenant(ctx, *tenantID); err == nil && len(admins) > 0 {
+			return admins
+		}
+	}
+	if m.alertEmail != "" {
+		return []string{m.alertEmail}
+	}
+	return nil
 }
