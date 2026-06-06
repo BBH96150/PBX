@@ -173,6 +173,7 @@ func main() {
 		SSO:                  ssoMgr,
 		SAMLKey:              samlKey,
 		GatewaySyncer:        gwProvisioner,
+		LiveMonitor:          liveAdapter{inner: esl},
 		Originator:           esl, // *ESLClient satisfies portal.CallOriginator via Originate
 		SIPPublicHost:        cfg.SIPPublicHost,
 		SIPPublicPort:        cfg.SIPPublicPort,
@@ -256,6 +257,38 @@ func main() {
 	_ = prov.Shutdown(shutdownCtx)
 	wg.Wait()
 	slog.Info("shutdown complete")
+}
+
+// liveAdapter bridges freeswitch.ESLClient → portal.LiveMonitor, copying the
+// duplicated ActiveCall/LiveCall fields (portal avoids importing freeswitch).
+type liveAdapter struct {
+	inner *freeswitch.ESLClient
+}
+
+func (a liveAdapter) ActiveCalls(ctx context.Context) ([]portal.LiveCall, error) {
+	calls, err := a.inner.ActiveCalls(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]portal.LiveCall, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, portal.LiveCall{
+			CallUUID:   c.CallUUID,
+			KillUUID:   c.KillUUID,
+			Direction:  c.Direction,
+			CallerNum:  c.CallerNum,
+			CallerName: c.CallerName,
+			CalleeNum:  c.CalleeNum,
+			State:      c.State,
+			StartEpoch: c.StartEpoch,
+			Domains:    c.Domains,
+		})
+	}
+	return out, nil
+}
+
+func (a liveAdapter) Hangup(ctx context.Context, uuid string) error {
+	return a.inner.Hangup(ctx, uuid)
 }
 
 // gwAdapter bridges freeswitch.GatewayProvisioner → portal.GatewaySyncer.

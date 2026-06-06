@@ -2,6 +2,7 @@
 {{$t := .Tenant}}{{$a := .NavActive}}
 <nav class="subnav">
   <a href="/admin/tenants/{{$t.ID}}"{{if eq $a "overview"}} class="active"{{end}}>Overview</a>
+  <a href="/admin/tenants/{{$t.ID}}/live"{{if eq $a "live"}} class="active"{{end}}>Live</a>
   <a href="/admin/tenants/{{$t.ID}}/trunks"{{if eq $a "trunks"}} class="active"{{end}}>Trunks</a>
   <a href="/admin/tenants/{{$t.ID}}/dids"{{if eq $a "dids"}} class="active"{{end}}>Numbers</a>
   <a href="/admin/tenants/{{$t.ID}}/outbound-routes"{{if eq $a "outbound"}} class="active"{{end}}>Outbound</a>

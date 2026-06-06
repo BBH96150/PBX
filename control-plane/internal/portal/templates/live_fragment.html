@@ -1,0 +1,37 @@
+{{define "live_fragment"}}
+{{$tid := .TenantID}}
+{{if not .HasLive}}
+  <p class="pill pill-warn">Live monitoring is not configured on this server.</p>
+{{else if not .FSUp}}
+  <p class="pill pill-err">FreeSWITCH unreachable — live data unavailable. Retrying…</p>
+{{else}}
+  <div class="row" style="margin-bottom:0.6rem">
+    <strong>{{len .Calls}} active call{{if ne (len .Calls) 1}}s{{end}}</strong>
+    <span class="pill pill-ok">FreeSWITCH connected</span>
+  </div>
+  {{if .Calls}}
+  <table>
+    <thead><tr><th>Dir</th><th>From</th><th>To</th><th>State</th><th>Duration</th><th></th></tr></thead>
+    <tbody>
+      {{range .Calls}}
+      <tr>
+        <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔</span>{{end}}</td>
+        <td><code>{{.CallerNum}}</code>{{if .CallerName}} <span class="muted">{{.CallerName}}</span>{{end}}</td>
+        <td><code>{{.CalleeNum}}</code></td>
+        <td>{{if eq .State "ACTIVE"}}<span class="pill pill-ok">active</span>{{else if or (eq .State "RINGING") (eq .State "EARLY")}}<span class="pill pill-warn">{{.State}}</span>{{else}}<span class="pill">{{.State}}</span>{{end}}</td>
+        <td>{{if .Dur}}{{.Dur}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          <form hx-post="/admin/tenants/{{$tid}}/live/hangup" hx-target="#live-panel" hx-swap="innerHTML" style="margin:0" onsubmit="return confirm('Hang up this call?')">
+            <input type="hidden" name="uuid" value="{{.KillUUID}}">
+            <button type="submit" class="btn-sm btn-danger">Hang up</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">No active calls right now.</p>
+  {{end}}
+{{end}}
+{{end}}

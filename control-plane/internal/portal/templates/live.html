@@ -1,0 +1,22 @@
+{{define "live_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Live calls</span></h1>
+  <span class="muted">auto-refreshing every 2s</span>
+</div>
+{{template "tenant_subnav" .}}
+
+<section class="card" style="margin-top:1rem">
+  <p class="muted" style="font-size:0.9rem;margin-top:0">
+    Calls currently in progress for this workspace, matched by SIP domain. Newly
+    arriving PSTN calls appear once they bridge to an extension.
+  </p>
+  <div id="live-panel"
+       hx-get="/admin/tenants/{{$t.ID}}/live/fragment"
+       hx-trigger="load, every 2s"
+       hx-swap="innerHTML"
+       aria-live="polite">
+    <p class="muted">Loading live call state…</p>
+  </div>
+</section>
+{{end}}
