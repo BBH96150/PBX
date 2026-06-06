@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,8 +58,8 @@ func liveCallHasDomain(c LiveCall, set map[string]struct{}) bool {
 }
 
 // scopedActiveCalls returns this tenant's in-progress calls (filtered to the
-// tenant's SIP domains) and whether FreeSWITCH was reachable.
-func (s *Server) scopedActiveCalls(ctx context.Context, tid uuid.UUID) (views []liveCallView, fsUp bool) {
+// given SIP domain set) and whether FreeSWITCH was reachable.
+func (s *Server) scopedActiveCalls(ctx context.Context, set map[string]struct{}) (views []liveCallView, fsUp bool) {
 	if s.live == nil {
 		return nil, false
 	}
@@ -68,7 +69,6 @@ func (s *Server) scopedActiveCalls(ctx context.Context, tid uuid.UUID) (views []
 	if err != nil {
 		return nil, false
 	}
-	set := s.tenantDomainSet(ctx, tid)
 	now := time.Now().Unix()
 	for _, c := range calls {
 		if !liveCallHasDomain(c, set) {
@@ -81,6 +81,26 @@ func (s *Server) scopedActiveCalls(ctx context.Context, tid uuid.UUID) (views []
 		views = append(views, liveCallView{LiveCall: c, Dur: dur})
 	}
 	return views, true
+}
+
+// tenantPresence returns the sorted list of extension numbers currently
+// registered within the tenant's SIP domains, and whether presence data was
+// available (false if the location table can't be read — presence shows as
+// unavailable rather than erroring the page).
+func (s *Server) tenantPresence(ctx context.Context, set map[string]struct{}) (online []string, ok bool) {
+	regs, err := s.store.ActiveRegistrations(ctx)
+	if err != nil {
+		return nil, false
+	}
+	seen := map[string]bool{}
+	for _, r := range regs {
+		if _, in := set[strings.ToLower(r.Domain)]; in && !seen[r.Username] {
+			seen[r.Username] = true
+			online = append(online, r.Username)
+		}
+	}
+	sort.Strings(online)
+	return online, true
 }
 
 func (s *Server) liveDashboard(w http.ResponseWriter, r *http.Request) {
@@ -104,13 +124,20 @@ func (s *Server) liveFragment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	calls, fsUp := s.scopedActiveCalls(r.Context(), tid)
+	set := s.tenantDomainSet(r.Context(), tid)
+	calls, fsUp := s.scopedActiveCalls(r.Context(), set)
+	online, presenceUp := s.tenantPresence(r.Context(), set)
+	total := len(mustExtensions(r.Context(), s.store, tid))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpls.ExecuteTemplate(w, "live_fragment", map[string]any{
-		"TenantID": tid,
-		"Calls":    calls,
-		"FSUp":     fsUp,
-		"HasLive":  s.live != nil,
+		"TenantID":   tid,
+		"Calls":      calls,
+		"FSUp":       fsUp,
+		"HasLive":    s.live != nil,
+		"Online":     online,
+		"OnlineN":    len(online),
+		"TotalExt":   total,
+		"PresenceUp": presenceUp,
 	}); err != nil {
 		slog.Error("live fragment render", "err", err)
 	}

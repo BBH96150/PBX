@@ -7,8 +7,16 @@
 {{else}}
   <div class="row" style="margin-bottom:0.6rem">
     <strong>{{len .Calls}} active call{{if ne (len .Calls) 1}}s{{end}}</strong>
-    <span class="pill pill-ok">FreeSWITCH connected</span>
+    <span>
+      {{if .PresenceUp}}<span class="pill pill-info">{{.OnlineN}} / {{.TotalExt}} extensions online</span>{{else}}<span class="pill pill-warn">presence unavailable</span>{{end}}
+      <span class="pill pill-ok">FreeSWITCH connected</span>
+    </span>
   </div>
+  {{if and .PresenceUp .Online}}
+  <p style="margin:0 0 0.6rem"><span class="muted" style="font-size:0.82rem">Online:</span>
+    {{range .Online}}<span class="pill pill-ok" style="margin-right:0.2rem"><code>{{.}}</code></span>{{end}}
+  </p>
+  {{end}}
   {{if .Calls}}
   <table>
     <thead><tr><th>Dir</th><th>From</th><th>To</th><th>State</th><th>Duration</th><th></th></tr></thead>
