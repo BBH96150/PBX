@@ -208,6 +208,7 @@ func (s *Server) Router() http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(s.authRequired)
 		r.Use(s.require2FAEnrollment) // Phase 4.7 grace-mode enforcer
+		r.Use(s.adminScopeRequired)   // confine non-admins to /me (self-service)
 		r.Get("/", s.dashboard)
 		// Self-service portal (owner-scoped; available to any authenticated user).
 		r.Get("/me", s.meHome)
@@ -386,6 +387,35 @@ func tokenFromCtx(ctx context.Context) *store.APIToken {
 		return v
 	}
 	return nil
+}
+
+// selfServicePrefixes are the authed paths a non-admin (member) may reach.
+// Everything else under the authed group is admin-only. Paths are relative to
+// the /admin mount (StripPrefix already removed it).
+var selfServicePrefixes = []string{"/me", "/security", "/softphone", "/switch-tenant", "/verify-email", "/logout"}
+
+// adminScopeRequired confines non-admin sessions to the self-service area. A
+// token with "admin" scope (super_admin / tenant_admin) passes through to all
+// admin routes; any lower-scoped session is allowed only the self-service +
+// account paths above and is otherwise redirected to /me. This both powers the
+// self-service portal and closes the prior gap where any member could reach
+// tenant-management routes. Must run after authRequired (needs the token).
+func (s *Server) adminScopeRequired(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tok := tokenFromCtx(r.Context())
+		if tok != nil && tok.Scope == "admin" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		p := r.URL.Path
+		for _, pre := range selfServicePrefixes {
+			if p == pre || strings.HasPrefix(p, pre+"/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		http.Redirect(w, r, "/admin/me", http.StatusSeeOther)
+	})
 }
 
 // require2FAEnrollment is the per-tenant `require_2fa` grace-mode enforcer.
