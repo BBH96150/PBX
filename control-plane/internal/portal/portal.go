@@ -209,6 +209,8 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.authRequired)
 		r.Use(s.require2FAEnrollment) // Phase 4.7 grace-mode enforcer
 		r.Get("/", s.dashboard)
+		r.Get("/ops/live", s.opsLive)
+		r.Get("/ops/live/fragment", s.opsLiveFragment)
 		r.Post("/switch-tenant", s.switchTenant)
 		r.Post("/tenants", s.createTenant)
 		r.Get("/tenants/{tenantID}", s.tenantDetail)

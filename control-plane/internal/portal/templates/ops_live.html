@@ -1,0 +1,16 @@
+{{define "ops_live_content"}}
+<div class="row">
+  <h1 style="margin:0">Live ops <span class="muted">· all workspaces</span></h1>
+  <span class="muted">auto-refreshing every 2s</span>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <div id="ops-live-panel"
+       hx-get="/admin/ops/live/fragment"
+       hx-trigger="load, every 2s"
+       hx-swap="innerHTML"
+       aria-live="polite">
+    <p class="muted">Loading platform live state…</p>
+  </div>
+</section>
+{{end}}

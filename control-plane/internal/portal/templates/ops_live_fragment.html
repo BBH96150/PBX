@@ -1,0 +1,50 @@
+{{define "ops_live_fragment"}}
+{{if not .HasLive}}
+  <p class="pill pill-warn">Live monitoring is not configured on this server.</p>
+{{else if not .FSUp}}
+  <p class="pill pill-err">FreeSWITCH unreachable — live data unavailable. Retrying…</p>
+{{else}}
+  <div class="row" style="margin-bottom:0.6rem">
+    <strong>{{len .Calls}} active call{{if ne (len .Calls) 1}}s{{end}} across the platform</strong>
+    <span>
+      {{if not .PresenceUp}}<span class="pill pill-warn">presence unavailable</span>{{end}}
+      <span class="pill pill-ok">FreeSWITCH connected</span>
+    </span>
+  </div>
+
+  <h3 style="margin:0.8rem 0 0.4rem">Workspaces</h3>
+  <table>
+    <thead><tr><th>Workspace</th><th>Online ext</th><th>Active calls</th></tr></thead>
+    <tbody>
+      {{range .Rows}}
+      <tr>
+        <td><a href="/admin/tenants/{{.TenantID}}/live">{{.Name}}</a></td>
+        <td>{{.Online}} / {{.TotalExt}}</td>
+        <td>{{if .ActiveCalls}}<span class="pill pill-info">{{.ActiveCalls}}</span>{{else}}<span class="muted">0</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <h3 style="margin:1rem 0 0.4rem">Active calls</h3>
+  {{if .Calls}}
+  <table>
+    <thead><tr><th>Workspace</th><th>Dir</th><th>From</th><th>To</th><th>State</th><th>Duration</th></tr></thead>
+    <tbody>
+      {{range .Calls}}
+      <tr>
+        <td>{{.Tenant}}</td>
+        <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔</span>{{end}}</td>
+        <td><code>{{.CallerNum}}</code></td>
+        <td><code>{{.CalleeNum}}</code></td>
+        <td>{{if eq .State "ACTIVE"}}<span class="pill pill-ok">active</span>{{else if or (eq .State "RINGING") (eq .State "EARLY")}}<span class="pill pill-warn">{{.State}}</span>{{else}}<span class="pill">{{.State}}</span>{{end}}</td>
+        <td>{{if .Dur}}{{.Dur}}{{else}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">No active calls across any workspace right now.</p>
+  {{end}}
+{{end}}
+{{end}}
