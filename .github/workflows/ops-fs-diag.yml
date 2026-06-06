@@ -36,7 +36,11 @@ jobs:
           DIAG="${1:-no}"
           [ "$DIAG" = "yes" ] || { echo "set diag=yes to run"; exit 0; }
           FS=sip-platform-freeswitch-1
-          fscli() { docker exec "$FS" fs_cli -x "$1" 2>&1; }
+          # fs_cli defaults to the ClueCon password; ours was rotated. Pull the
+          # real ESL password from the control-plane container env (not printed).
+          ESLPW=$(docker exec sip-platform-control-plane-1 printenv ESL_PASSWORD 2>/dev/null)
+          ESLPW=${ESLPW:-ClueCon}
+          fscli() { docker exec "$FS" fs_cli -p "$ESLPW" -x "$1" 2>&1; }
           for cmd in \
             "callcenter_config queue list" \
             "callcenter_config agent list" \
