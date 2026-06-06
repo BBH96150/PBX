@@ -294,6 +294,8 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants/{tenantID}/webhooks", s.webhookCreate)
 		r.Post("/tenants/{tenantID}/webhooks/{id}/delete", s.webhookDelete)
 		r.Post("/tenants/{tenantID}/webhooks/{id}/test", s.webhookTest)
+		r.Post("/tenants/{tenantID}/webhooks/{id}/toggle", s.webhookToggle)
+		r.Post("/tenants/{tenantID}/webhooks/{id}/rotate-secret", s.webhookRotateSecret)
 		r.Post("/tenants/{tenantID}/security", s.tenantSecurityUpdate)
 
 		// Phase 4.7: 2FA enrollment + management + admin reset.

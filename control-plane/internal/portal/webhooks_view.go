@@ -96,6 +96,45 @@ func (s *Server) webhookDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect+"?flash=Webhook+deleted.", http.StatusSeeOther)
 }
 
+func (s *Server) webhookToggle(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	redirect := "/admin/tenants/" + tid.String() + "/webhooks"
+	enabled := r.FormValue("enabled") == "true"
+	if err := s.store.SetWebhookEnabled(r.Context(), tid, id, enabled); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, tid, "webhook.enabled.set", "webhook_endpoint", &id, map[string]any{"enabled": enabled})
+	http.Redirect(w, r, redirect+"?flash=Webhook+updated.", http.StatusSeeOther)
+}
+
+func (s *Server) webhookRotateSecret(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	redirect := "/admin/tenants/" + tid.String() + "/webhooks"
+	if err := s.store.RotateWebhookSecret(r.Context(), tid, id, "whsec_"+randomHex(24)); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, tid, "webhook.secret.rotated", "webhook_endpoint", &id, nil)
+	http.Redirect(w, r, redirect+"?flash=Signing+secret+rotated+(update+your+receiver).", http.StatusSeeOther)
+}
+
 func (s *Server) webhookTest(w http.ResponseWriter, r *http.Request) {
 	tid, ok := s.parseTenantParam(w, r)
 	if !ok {

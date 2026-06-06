@@ -75,6 +75,22 @@ func (s *Store) DeleteWebhookEndpointForTenant(ctx context.Context, tenantID, id
 	return err
 }
 
+// SetWebhookEnabled enables/disables an endpoint (tenant-scoped).
+func (s *Store) SetWebhookEnabled(ctx context.Context, tenantID, id uuid.UUID, enabled bool) error {
+	_, err := s.DB.Exec(ctx,
+		`UPDATE webhook_endpoints SET enabled = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id, enabled)
+	return err
+}
+
+// RotateWebhookSecret replaces an endpoint's signing secret (tenant-scoped).
+func (s *Store) RotateWebhookSecret(ctx context.Context, tenantID, id uuid.UUID, newSecret string) error {
+	_, err := s.DB.Exec(ctx,
+		`UPDATE webhook_endpoints SET secret = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id, newSecret)
+	return err
+}
+
 // RecordWebhookDelivery stores the most recent delivery outcome for an endpoint.
 // status is "ok" or "fail"; errMsg is empty on success.
 func (s *Store) RecordWebhookDelivery(ctx context.Context, id uuid.UUID, status, errMsg string) error {

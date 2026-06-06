@@ -40,6 +40,13 @@
           <form method="post" action="/admin/tenants/{{$t.ID}}/webhooks/{{.ID}}/test" style="display:inline;margin:0">
             <button type="submit" class="secondary btn-sm">Send test</button>
           </form>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/webhooks/{{.ID}}/toggle" style="display:inline;margin:0;margin-left:0.25rem">
+            <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+            <button type="submit" class="secondary btn-sm">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+          </form>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/webhooks/{{.ID}}/rotate-secret" style="display:inline;margin:0;margin-left:0.25rem" onsubmit="return confirm('Rotate the signing secret? Your receiver must be updated with the new secret or deliveries will fail verification.')">
+            <button type="submit" class="secondary btn-sm">Rotate secret</button>
+          </form>
           <form method="post" action="/admin/tenants/{{$t.ID}}/webhooks/{{.ID}}/delete" style="display:inline;margin:0;margin-left:0.25rem" onsubmit="return confirm('Delete this webhook endpoint?')">
             <button type="submit" class="secondary btn-sm">Delete</button>
           </form>
