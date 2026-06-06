@@ -107,6 +107,12 @@ func (s *Store) SetUserPassword(ctx context.Context, userID uuid.UUID, newPasswo
 	return err
 }
 
+// UpdateUserDisplayName changes a user's display name.
+func (s *Store) UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, name string) error {
+	_, err := s.DB.Exec(ctx, `UPDATE users SET display_name = $2, updated_at = now() WHERE id = $1`, userID, name)
+	return err
+}
+
 // GetUserByEmail does the same lookup as VerifyUserPassword minus the
 // bcrypt check. Used by portal session resolution.
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {

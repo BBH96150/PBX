@@ -1,0 +1,36 @@
+{{define "account_content"}}
+<div class="row">
+  <h1 style="margin:0">Account</h1>
+  <span class="muted">{{with .SessionUser}}{{.Email}}{{end}}</span>
+</div>
+<nav style="margin-top:0.25rem">
+  <a href="/admin/security/account">Account</a> ·
+  <a href="/admin/security/2fa">2FA</a> ·
+  <a href="/admin/security/sso">Linked SSO</a> ·
+  <a href="/admin/security/sessions">Active sessions</a>
+</nav>
+
+{{if .Flash}}<article style="margin-top:1rem">{{.Flash}}</article>{{end}}
+{{if .FlashErr}}<article class="banner-warn" style="margin-top:1rem">{{.FlashErr}}</article>{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>Profile</h2>
+  <form method="post" action="/admin/security/account/profile">
+    <label>Display name
+      <input name="display_name" value="{{with .SessionUser}}{{.DisplayName}}{{end}}" required>
+    </label>
+    <button type="submit">Save profile</button>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Change password</h2>
+  <form method="post" action="/admin/security/account/password">
+    <label>Current password<input type="password" name="current_password" required autocomplete="current-password"></label>
+    <label>New password<input type="password" name="new_password" required minlength="8" autocomplete="new-password"></label>
+    <label>Confirm new password<input type="password" name="confirm_password" required minlength="8" autocomplete="new-password"></label>
+    <button type="submit">Change password</button>
+    <small class="muted">At least 8 characters. You'll stay signed in on this device.</small>
+  </form>
+</section>
+{{end}}

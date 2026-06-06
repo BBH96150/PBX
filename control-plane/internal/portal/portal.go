@@ -297,6 +297,9 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants/{tenantID}/security", s.tenantSecurityUpdate)
 
 		// Phase 4.7: 2FA enrollment + management + admin reset.
+		r.Get("/security/account", s.accountPage)
+		r.Post("/security/account/profile", s.accountProfilePost)
+		r.Post("/security/account/password", s.accountPasswordPost)
 		r.Get("/security/2fa", s.twoFAStatus)
 		r.Post("/security/2fa/setup", s.twoFASetupPost)
 		r.Post("/security/2fa/confirm", s.twoFAConfirmPost)
