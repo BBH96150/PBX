@@ -301,6 +301,42 @@ func (a liveAdapter) Hangup(ctx context.Context, uuid string) error {
 	return a.inner.Hangup(ctx, uuid)
 }
 
+func (a liveAdapter) QueueAgents(ctx context.Context) ([]portal.QAgent, error) {
+	ags, err := a.inner.CCAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]portal.QAgent, 0, len(ags))
+	for _, g := range ags {
+		out = append(out, portal.QAgent{Name: g.Name, Status: g.Status, State: g.State})
+	}
+	return out, nil
+}
+
+func (a liveAdapter) QueueTiers(ctx context.Context) ([]portal.QTier, error) {
+	ts, err := a.inner.CCTiers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]portal.QTier, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, portal.QTier{Queue: t.Queue, Agent: t.Agent})
+	}
+	return out, nil
+}
+
+func (a liveAdapter) QueueMembers(ctx context.Context, queueName string) ([]portal.QMember, error) {
+	ms, err := a.inner.CCMembers(ctx, queueName)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]portal.QMember, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, portal.QMember{CIDNum: m.CIDNum, CIDName: m.CIDName, JoinedEpoch: m.JoinedEpoch, State: m.State})
+	}
+	return out, nil
+}
+
 // gwAdapter bridges freeswitch.GatewayProvisioner → portal.GatewaySyncer.
 // The portal package defines its own GatewayLiveStatus to avoid importing
 // freeswitch; this adapter does the trivial field copy.

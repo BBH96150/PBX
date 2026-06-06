@@ -1,0 +1,52 @@
+{{define "queue_board_fragment"}}
+{{if not .HasLive}}
+  <p class="pill pill-warn">Live monitoring is not configured on this server.</p>
+{{else if .NoQueues}}
+  <p class="empty">No call queues configured. Create one from the tenant overview to see live stats here.</p>
+{{else if not .FSUp}}
+  <p class="pill pill-err">FreeSWITCH unreachable — live queue data unavailable. Retrying…</p>
+{{else}}
+  <div class="grid-2">
+    {{range .Queues}}
+    <section class="card" style="margin:0">
+      <h2 style="margin-top:0">{{.Name}}{{if .Ext}} <span class="muted">· {{.Ext}}</span>{{end}}</h2>
+      <div class="stats" style="margin:0 0 0.6rem">
+        <div class="stat"><div class="num">{{.Waiting}}</div><div class="lbl">waiting</div></div>
+        <div class="stat"><div class="num">{{if .Longest}}{{.Longest}}{{else}}—{{end}}</div><div class="lbl">longest wait</div></div>
+        <div class="stat"><div class="num">{{.Avail}}</div><div class="lbl">agents avail</div></div>
+      </div>
+      <p style="margin:0 0 0.5rem">
+        <span class="pill pill-ok">{{.Avail}} available</span>
+        <span class="pill pill-warn">{{.OnCall}} on call</span>
+        <span class="pill">{{.Out}} out</span>
+      </p>
+      {{if .Callers}}
+      <table>
+        <thead><tr><th>Waiting caller</th><th>Wait</th></tr></thead>
+        <tbody>
+          {{range .Callers}}
+          <tr><td><code>{{.Num}}</code>{{if .Name}} <span class="muted">{{.Name}}</span>{{end}}</td><td>{{if .Wait}}{{.Wait}}{{else}}—{{end}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{else}}<p class="muted" style="font-size:0.85rem;margin:0 0 0.5rem">No callers waiting.</p>{{end}}
+      {{if .Agents}}
+      <details>
+        <summary class="muted" style="font-size:0.82rem;cursor:pointer">Agents ({{len .Agents}})</summary>
+        <table style="margin-top:0.4rem">
+          <tbody>
+            {{range .Agents}}
+            <tr>
+              <td>{{.Label}}</td>
+              <td>{{if eq .Bucket "avail"}}<span class="pill pill-ok">{{.Status}}</span>{{else if eq .Bucket "oncall"}}<span class="pill pill-warn">{{.Status}}</span>{{else}}<span class="pill">{{.Status}}</span>{{end}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </details>
+      {{else}}<p class="muted" style="font-size:0.82rem;margin:0">No agents assigned.</p>{{end}}
+    </section>
+    {{end}}
+  </div>
+{{end}}
+{{end}}

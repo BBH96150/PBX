@@ -290,6 +290,8 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/audit", s.auditList)
 		r.Get("/tenants/{tenantID}/audit.csv", s.tenantAuditCSV)
 		r.Get("/tenants/{tenantID}/setup", s.tenantSetupCheck)
+		r.Get("/tenants/{tenantID}/queues-live", s.queueBoard)
+		r.Get("/tenants/{tenantID}/queues-live/fragment", s.queueBoardFragment)
 		r.Get("/tenants/{tenantID}/webhooks", s.webhooksList)
 		r.Post("/tenants/{tenantID}/webhooks", s.webhookCreate)
 		r.Post("/tenants/{tenantID}/webhooks/{id}/delete", s.webhookDelete)

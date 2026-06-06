@@ -180,6 +180,7 @@
       <thead><tr><th>Ext</th><th>Name</th><th>Strategy</th><th></th></tr></thead>
       <tbody>{{range .Queues}}<tr><td><code>{{.Extension}}</code></td><td>{{.Name}}</td><td class="muted">{{.Strategy}}</td><td><a href="/admin/tenants/{{$t.ID}}/queues/{{.ID}}">Manage agents →</a></td></tr>{{end}}</tbody>
     </table>
+    <p style="margin:0.4rem 0 0"><a href="/admin/tenants/{{$t.ID}}/queues-live" class="btn-sm">📊 Live queue board →</a></p>
     {{end}}
     <details><summary>Add queue</summary>
       <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/queues">

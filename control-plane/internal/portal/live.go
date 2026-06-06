@@ -32,6 +32,21 @@ type LiveCall struct {
 type LiveMonitor interface {
 	ActiveCalls(ctx context.Context) ([]LiveCall, error)
 	Hangup(ctx context.Context, uuid string) error
+	// Call-center live state (mod_callcenter) for the queue board.
+	QueueAgents(ctx context.Context) ([]QAgent, error)
+	QueueTiers(ctx context.Context) ([]QTier, error)
+	QueueMembers(ctx context.Context, queueName string) ([]QMember, error)
+}
+
+// QAgent / QTier / QMember mirror the freeswitch CC* types (portal avoids
+// importing freeswitch; the adapter copies fields).
+type QAgent struct{ Name, Status, State string }
+type QTier struct{ Queue, Agent string }
+type QMember struct {
+	CIDNum      string
+	CIDName     string
+	JoinedEpoch int64
+	State       string
 }
 
 // liveCallView is the render model: a LiveCall plus a humanized duration.
