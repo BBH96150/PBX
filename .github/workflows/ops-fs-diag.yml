@@ -56,6 +56,12 @@ jobs:
             echo "--- members of $q ---"
             fscli "callcenter_config queue list members $q"
           done
+          echo "===== agent list WITH a throwaway agent (to capture columns) ====="
+          fscli "callcenter_config agent add diagagent@diaglocal callback" >/dev/null 2>&1
+          fscli "callcenter_config agent set contact diagagent@diaglocal 'error/user_busy'" >/dev/null 2>&1
+          fscli "callcenter_config agent list"
+          echo "--- cleanup ---"
+          fscli "callcenter_config agent del diagagent@diaglocal"
           echo "===== show channels as json (first 1200 chars) ====="
           fscli "show channels as json" | head -c 1200
           echo
