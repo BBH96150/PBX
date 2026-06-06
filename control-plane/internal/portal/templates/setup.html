@@ -1,0 +1,30 @@
+{{define "setup_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Setup check</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+<section class="card callout" style="margin-top:1rem">
+  <h2>
+    {{if eq .Overall "ok"}}✓ Everything looks ready{{else if eq .Overall "warn"}}⚠ Mostly ready — {{.Warns}} thing(s) to review{{else}}✕ {{.Fails}} blocking issue(s){{end}}
+  </h2>
+  <p class="muted" style="font-size:0.9rem;margin:0">Live checks of this workspace's calling readiness. Re-run anytime by reloading this page.</p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <table>
+    <tbody>
+      {{range .Rows}}
+      <tr>
+        <td style="width:6rem">
+          {{if eq .Status "ok"}}<span class="pill pill-ok">OK</span>{{else if eq .Status "warn"}}<span class="pill pill-warn">CHECK</span>{{else}}<span class="pill pill-err">FAIL</span>{{end}}
+        </td>
+        <td><strong>{{.Label}}</strong><br><span class="muted" style="font-size:0.88rem">{{.Detail}}</span></td>
+        <td style="text-align:right">{{if .FixURL}}<a href="{{.FixURL}}" class="btn-sm">{{.FixLabel}} →</a>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}

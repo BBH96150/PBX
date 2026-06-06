@@ -13,6 +13,8 @@
 {{$trunkCount := .TrunkCount}}
 {{template "tenant_subnav" .}}
 
+<p style="margin:0.6rem 0 0"><a href="/admin/tenants/{{$t.ID}}/setup" role="button" class="secondary btn-sm">✓ Run setup check</a></p>
+
 {{if or (eq $extCount 0) (eq $devCount 0) (eq $trunkCount 0)}}
 <section class="card callout" style="margin-top:1rem">
   <h2>Getting started</h2>
