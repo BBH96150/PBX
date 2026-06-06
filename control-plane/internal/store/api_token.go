@@ -138,6 +138,36 @@ func (s *Store) RevokeAPIToken(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+// ListAPITokensForTenant returns the API tokens scoped to one tenant.
+func (s *Store) ListAPITokensForTenant(ctx context.Context, tenantID uuid.UUID) ([]APIToken, error) {
+	const q = `
+		SELECT id, tenant_id, name, token_prefix, scope, expires_at, last_used_at, created_at
+		  FROM api_tokens WHERE tenant_id = $1 ORDER BY created_at DESC`
+	rows, err := s.DB.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []APIToken
+	for rows.Next() {
+		var t APIToken
+		if err := rows.Scan(
+			&t.ID, &t.TenantID, &t.Name, &t.TokenPrefix, &t.Scope,
+			&t.ExpiresAt, &t.LastUsedAt, &t.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// RevokeAPITokenForTenant deletes a token only if it belongs to the tenant.
+func (s *Store) RevokeAPITokenForTenant(ctx context.Context, tenantID, id uuid.UUID) error {
+	_, err := s.DB.Exec(ctx, `DELETE FROM api_tokens WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	return err
+}
+
 func (s *Store) UpdateAPITokenLastUsed(ctx context.Context, id uuid.UUID) error {
 	_, err := s.DB.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, id)
 	return err

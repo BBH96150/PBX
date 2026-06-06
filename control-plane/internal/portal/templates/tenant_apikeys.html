@@ -1,0 +1,65 @@
+{{define "tenant_apikeys_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· API keys</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+{{if .NewToken}}
+<article class="callout" style="margin-top:1rem">
+  <strong>New API key — copy it now, it won't be shown again:</strong>
+  <pre style="margin:0.4rem 0 0;white-space:pre-wrap;word-break:break-all">{{.NewToken}}</pre>
+</article>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>What these are</h2>
+  <p class="muted" style="font-size:0.9rem;margin:0">
+    Tenant-scoped bearer tokens for the REST API (<code>/v1</code>) — e.g. for
+    integrations like TendPOS to read this workspace's extensions, call records,
+    and directory. Send as <code>Authorization: Bearer &lt;key&gt;</code>.
+  </p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Keys <span class="muted">({{len .Tokens}})</span></h2>
+  {{if .Tokens}}
+  <table>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Scope</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+      {{range .Tokens}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td><code>{{.TokenPrefix}}…</code></td>
+        <td><span class="pill">{{.Scope}}</span></td>
+        <td class="muted">{{if .LastUsedAt}}{{.LastUsedAt.Format "Jan 2, 15:04"}}{{else}}never{{end}}</td>
+        <td class="muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/api-keys/{{.ID}}/revoke" style="margin:0" onsubmit="return confirm('Revoke this key? Any integration using it will stop working.')">
+            <button type="submit" class="secondary btn-sm">Revoke</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No API keys yet — create one below.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Create a key</h2>
+  <form class="inline" method="post" action="/admin/tenants/{{$t.ID}}/api-keys">
+    <label>Name<input name="name" placeholder="e.g. TendPOS integration" required></label>
+    <label>Scope
+      <select name="scope">
+        <option value="read">read (recommended)</option>
+        <option value="write">write</option>
+        <option value="admin">admin</option>
+      </select>
+    </label>
+    <button type="submit">Create key</button>
+  </form>
+</section>
+{{end}}
