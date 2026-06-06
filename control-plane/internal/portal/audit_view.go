@@ -2,6 +2,7 @@ package portal
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -18,7 +19,9 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 		s.errPage(w, r, err)
 		return
 	}
-	entries, _ := s.store.ListAuditForTenant(r.Context(), tid, 200)
+	eventFilter := strings.TrimSpace(r.URL.Query().Get("event"))
+	actorFilter := strings.TrimSpace(r.URL.Query().Get("actor"))
+	entries, _ := s.store.ListAuditForTenantFiltered(r.Context(), tid, eventFilter, actorFilter, 200)
 	requireVerified, _ := s.store.TenantRequiresEmailVerified(r.Context(), tid)
 	require2FA, _ := s.store.TenantRequires2FA(r.Context(), tid)
 	s.renderLayout(w, r, tenant.Name+" · Audit log", "audit", map[string]any{
@@ -27,6 +30,8 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 		"RequireVerified": requireVerified,
 		"Require2FA":      require2FA,
 		"NavActive":       "audit",
+		"EventFilter":     eventFilter,
+		"ActorFilter":     actorFilter,
 	})
 }
 

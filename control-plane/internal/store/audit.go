@@ -23,6 +23,32 @@ type AuditEntry struct {
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
+// ListAuditForTenantFiltered returns recent events for a tenant, optionally
+// narrowed by event-name substring and actor-email substring (empty = no
+// filter). Tenant-scoped only.
+func (s *Store) ListAuditForTenantFiltered(ctx context.Context, tenantID uuid.UUID, eventFilter, actorFilter string, limit int) ([]AuditEntry, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	const q = `
+	  SELECT id, tenant_id, actor_user_id, actor_token_id,
+	         COALESCE(actor_email,''), event,
+	         COALESCE(target_type,''), target_id,
+	         COALESCE(host(ip_address),''), COALESCE(user_agent,''),
+	         payload::text, created_at
+	    FROM audit_log
+	   WHERE tenant_id = $1
+	     AND ($2 = '' OR event ILIKE '%'||$2||'%')
+	     AND ($3 = '' OR COALESCE(actor_email,'') ILIKE '%'||$3||'%')
+	   ORDER BY created_at DESC LIMIT $4`
+	r, err := s.DB.Query(ctx, q, tenantID, eventFilter, actorFilter, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return scanAudit(r)
+}
+
 // ListAuditForTenant returns the most-recent `limit` events for a tenant.
 // Pass uuid.Nil to fetch platform-level events (tenant_id IS NULL).
 func (s *Store) ListAuditForTenant(ctx context.Context, tenantID uuid.UUID, limit int) ([]AuditEntry, error) {

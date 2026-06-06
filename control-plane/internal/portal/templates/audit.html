@@ -31,8 +31,14 @@
 <section class="card" style="margin-top:1rem">
   <div class="row">
     <h2 style="margin:0;border:0;padding:0">Recent events <span class="muted">({{len .Entries}})</span></h2>
-    {{if .Entries}}<a href="/admin/tenants/{{$t.ID}}/audit.csv" role="button" class="secondary btn-sm">⬇ Export CSV</a>{{end}}
+    <a href="/admin/tenants/{{$t.ID}}/audit.csv" role="button" class="secondary btn-sm">⬇ Export CSV</a>
   </div>
+  <form method="get" action="/admin/tenants/{{$t.ID}}/audit" class="inline" style="margin:0.6rem 0">
+    <label>Event<input name="event" value="{{.EventFilter}}" placeholder="e.g. login or extension." autocomplete="off"></label>
+    <label>Actor<input name="actor" value="{{.ActorFilter}}" placeholder="email contains" autocomplete="off"></label>
+    <button type="submit" class="btn-sm">Filter</button>
+    {{if or .EventFilter .ActorFilter}}<a href="/admin/tenants/{{$t.ID}}/audit" role="button" class="secondary btn-sm">Clear</a>{{end}}
+  </form>
   {{if .Entries}}
   <table>
     <thead><tr><th>When</th><th>Event</th><th>Actor</th><th>Target</th><th>IP</th><th>Detail</th></tr></thead>
@@ -49,8 +55,10 @@
       {{end}}
     </tbody>
   </table>
+  {{else if or .EventFilter .ActorFilter}}
+  <p class="empty">No events match the filter.</p>
   {{else}}
-  <p class="muted">No events yet.</p>
+  <p class="empty">No events yet.</p>
   {{end}}
 </section>
 {{end}}
