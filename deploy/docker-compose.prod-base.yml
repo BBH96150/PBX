@@ -124,6 +124,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-PBX <pbx@example.com>}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
       SAML_SP_CERT_FILE: /etc/control-plane/saml/cert.pem
       SAML_SP_KEY_FILE: /etc/control-plane/saml/key.pem
       POLYCOM_ZTP_API_BASE: ${POLYCOM_ZTP_API_BASE:-}

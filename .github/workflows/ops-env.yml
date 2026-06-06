@@ -1,0 +1,83 @@
+name: Ops · env
+
+# Manually-triggered, minimal management of the box's /root/sip-platform/.env.
+# Uses the deploy SSH secrets. show reports which mail/alert keys are SET
+# (never their values); set_alert_email upserts ALERT_EMAIL and recreates the
+# control-plane so it picks up the change.
+on:
+  workflow_dispatch:
+    inputs:
+      show:
+        description: "Type 'yes' to report which SMTP_* / ALERT_EMAIL keys are set in .env (status only, no values)."
+        required: false
+        default: "no"
+      set_alert_email:
+        description: "Email address to set as ALERT_EMAIL (recreates control-plane). Leave blank to skip."
+        required: false
+        default: ""
+
+jobs:
+  env:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run env op
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          SHOW: ${{ github.event.inputs.show }}
+          SET_ALERT_EMAIL: ${{ github.event.inputs.set_alert_email }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$SHOW" "$SET_ALERT_EMAIL" <<'EOF'
+          set -u
+          SHOW="${1:-no}"
+          SET_ALERT_EMAIL="${2:-}"
+          ENV=/root/sip-platform/.env
+          touch "$ENV"
+
+          if [ "$SHOW" = "yes" ]; then
+            echo "===== .env mail/alert key status (values hidden) ====="
+            for k in SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM SMTP_STARTTLS ALERT_EMAIL; do
+              if grep -qE "^${k}=.+" "$ENV"; then echo "$k: set"; else echo "$k: (unset)"; fi
+            done
+          fi
+
+          if [ -n "$SET_ALERT_EMAIL" ]; then
+            case "$SET_ALERT_EMAIL" in
+              *@*.*) ;;
+              *) echo "ABORT: '$SET_ALERT_EMAIL' does not look like an email address"; exit 1;;
+            esac
+            echo "===== set ALERT_EMAIL ====="
+            cp -a "$ENV" "$ENV.bak.alertemail"
+            grep -vE '^ALERT_EMAIL=' "$ENV" > "$ENV.tmp" || true
+            echo "ALERT_EMAIL=$SET_ALERT_EMAIL" >> "$ENV.tmp"
+            mv "$ENV.tmp" "$ENV"
+            echo "ALERT_EMAIL updated."
+            cd /root/sip-platform
+            # Recreate control-plane so it reads the new env var. The on-box
+            # compose must already map ALERT_EMAIL (deployed separately).
+            docker compose -p sip-platform up -d --no-build --force-recreate control-plane
+            sleep 8
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:8080/healthz || echo 000)
+            echo "control-plane healthz after recreate: $code"
+            if [ "$code" != "200" ]; then
+              echo "WARNING: control-plane not healthy (HTTP $code) — check logs / consider restoring $ENV.bak.alertemail"
+              exit 1
+            fi
+            # Confirm the var is actually visible inside the container (status only).
+            if docker exec sip-platform-control-plane-1 printenv ALERT_EMAIL >/dev/null 2>&1; then
+              echo "container sees ALERT_EMAIL: set"
+            else
+              echo "container sees ALERT_EMAIL: (unset) — is it mapped in the compose environment?"
+            fi
+          fi
+          EOF
