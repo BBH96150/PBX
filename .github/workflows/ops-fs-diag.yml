@@ -1,0 +1,58 @@
+name: Ops · fs diag
+
+# Read-only FreeSWITCH diagnostics over the deploy SSH key. Captures the exact
+# mod_callcenter list output format (so we can write a correct parser) plus a
+# sample of `show channels as json`. No changes to anything.
+on:
+  workflow_dispatch:
+    inputs:
+      diag:
+        description: "Type 'yes' to dump callcenter list formats + a channels sample (read-only)."
+        required: false
+        default: "no"
+
+jobs:
+  fsdiag:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: FS diag
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          DIAG: ${{ github.event.inputs.diag }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$DIAG" <<'EOF'
+          set -u
+          DIAG="${1:-no}"
+          [ "$DIAG" = "yes" ] || { echo "set diag=yes to run"; exit 0; }
+          FS=sip-platform-freeswitch-1
+          fscli() { docker exec "$FS" fs_cli -x "$1" 2>&1; }
+          for cmd in \
+            "callcenter_config queue list" \
+            "callcenter_config agent list" \
+            "callcenter_config tier list"; do
+            echo "===== $cmd ====="
+            fscli "$cmd"
+            echo
+          done
+          echo "===== per-queue members ====="
+          # First column of `queue list` is the queue name; query members for each.
+          fscli "callcenter_config queue list" | awk -F'|' 'NR>1 && $1!="" {print $1}' | while read -r q; do
+            [ -n "$q" ] || continue
+            echo "--- members of $q ---"
+            fscli "callcenter_config queue list members $q"
+          done
+          echo "===== show channels as json (first 1200 chars) ====="
+          fscli "show channels as json" | head -c 1200
+          echo
+          EOF
