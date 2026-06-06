@@ -1,0 +1,53 @@
+{{define "reports_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Reports</span></h1>
+  <span class="muted">last {{.Days}} days</span>
+</div>
+{{template "tenant_subnav" .}}
+
+<div class="toolbar" style="margin-top:1rem">
+  <span class="muted" style="font-size:0.85rem">Window:</span>
+  <a href="?days=7" role="button" class="{{if ne .Days 7}}secondary {{end}}btn-sm">7 days</a>
+  <a href="?days=30" role="button" class="{{if ne .Days 30}}secondary {{end}}btn-sm">30 days</a>
+  <a href="?days=90" role="button" class="{{if ne .Days 90}}secondary {{end}}btn-sm">90 days</a>
+</div>
+
+<div class="stats" style="margin:1rem 0">
+  <div class="stat"><div class="num">{{.Report.Total}}</div><div class="lbl">Total calls</div></div>
+  <div class="stat"><div class="num">{{.AnswerRate}}%</div><div class="lbl">Answer rate</div></div>
+  <div class="stat"><div class="num">{{humandur .Report.AvgTalkSec}}</div><div class="lbl">Avg talk time</div></div>
+  <div class="stat"><div class="num">{{.Report.Inbound}}</div><div class="lbl">Inbound</div></div>
+  <div class="stat"><div class="num">{{.Report.Outbound}}</div><div class="lbl">Outbound</div></div>
+  <div class="stat"><div class="num">{{.Report.Internal}}</div><div class="lbl">Internal</div></div>
+</div>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Calls per day</h2>
+  {{if .DayBars}}
+  <div style="display:flex;align-items:flex-end;gap:2px;height:140px">
+    {{range .DayBars}}
+    <div title="{{.Label}}: {{.Count}}" style="flex:1;min-width:2px;height:{{if .Pct}}{{.Pct}}{{else}}1{{end}}%;background:var(--app-accent);border-radius:2px 2px 0 0"></div>
+    {{end}}
+  </div>
+  <div class="row" style="margin-top:0.3rem">
+    <span class="muted" style="font-size:0.75rem">{{.DayFrom}}</span>
+    <span class="muted" style="font-size:0.75rem">{{.DayTo}}</span>
+  </div>
+  {{else}}<p class="empty">No calls in this window.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Calls by hour <span class="muted">(UTC)</span></h2>
+  {{if .Report.Total}}
+  <div style="display:flex;align-items:flex-end;gap:3px;height:120px">
+    {{range .HourBars}}
+    <div title="{{.Label}}:00 — {{.Count}} calls" style="flex:1;height:{{if .Pct}}{{.Pct}}{{else}}1{{end}}%;background:var(--app-accent);border-radius:2px 2px 0 0;min-height:1px"></div>
+    {{end}}
+  </div>
+  <div style="display:flex;gap:3px;margin-top:0.2rem">
+    {{range .HourBars}}<div style="flex:1;text-align:center;font-size:0.6rem" class="muted">{{.Label}}</div>{{end}}
+  </div>
+  {{else}}<p class="empty">No calls in this window.</p>{{end}}
+</section>
+{{end}}
