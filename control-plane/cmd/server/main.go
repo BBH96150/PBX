@@ -215,8 +215,10 @@ func main() {
 	admin := &http.Server{Addr: cfg.AdminAddr, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
 	prov := &http.Server{Addr: cfg.ProvisioningAddr, Handler: provServer.Router(), ReadHeaderTimeout: 5 * time.Second}
 
+	trunkMon := freeswitch.NewTrunkMonitor(st, gwProvisionerCore, mailer, cfg.AlertEmail, 60*time.Second)
+
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 
 	go func() {
 		defer wg.Done()
@@ -244,6 +246,11 @@ func main() {
 	go func() {
 		defer wg.Done()
 		esl.Run(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		trunkMon.Run(ctx)
 	}()
 
 	_ = gwProvisioner // keep the variable in scope for the adapter; satisfied here.

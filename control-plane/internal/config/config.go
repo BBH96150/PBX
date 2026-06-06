@@ -35,6 +35,10 @@ type Config struct {
 	SMTPFrom        string
 	SMTPUseSTARTTLS bool
 
+	// AlertEmail receives operational alerts (e.g. trunk registration drops).
+	// Empty disables alert emails (events are still logged at WARN).
+	AlertEmail string
+
 	// Manufacturer RPS / true ZTP (Task #10). Each vendor has its own
 	// account/portal. Leave empty to fall back to LogOnly (the integration
 	// records the attempt without calling the vendor).
@@ -131,6 +135,8 @@ func FromEnv() (*Config, error) {
 	c.GrandstreamGDMSAPIBase = os.Getenv("GRANDSTREAM_GDMS_API_BASE")
 	c.GrandstreamGDMSAPIToken = os.Getenv("GRANDSTREAM_GDMS_API_TOKEN")
 	c.GrandstreamGDMSOrgID = os.Getenv("GRANDSTREAM_GDMS_ORG_ID")
+
+	c.AlertEmail = os.Getenv("ALERT_EMAIL")
 
 	c.BootstrapAPIToken = os.Getenv("BOOTSTRAP_API_TOKEN")
 	c.BootstrapUserEmail = os.Getenv("BOOTSTRAP_USER_EMAIL")
