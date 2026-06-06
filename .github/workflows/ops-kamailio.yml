@@ -1,0 +1,138 @@
+name: Ops · kamailio usrloc
+
+# Manually-triggered, reversible enablement of Kamailio usrloc DB persistence
+# (needed for the live extension-presence view). Uses the same SSH secrets as
+# the deploy job. Order of operations:
+#   1. Apply migration 0028 (creates the `location` table, version=9) — happens
+#      automatically on the next deploy to main.
+#   2. Run this with show=yes to inspect the box's actual kamailio.cfg + table.
+#   3. Run with enable_usrloc_db=yes to flip WITH_USRLOCDB 0->1 and restart
+#      Kamailio. Auto-rolls-back if Kamailio doesn't come back healthy.
+#   4. rollback=yes restores the pre-flip config and restarts.
+#
+# A flip restarts the Kamailio registrar — phones re-REGISTER within their
+# interval (brief), so prefer a low-traffic window.
+on:
+  workflow_dispatch:
+    inputs:
+      show:
+        description: "Type 'yes' for a read-only dump of the box's usrloc config + location table state. No changes."
+        required: false
+        default: "no"
+      enable_usrloc_db:
+        description: "Type 'yes' to flip WITH_USRLOCDB 0->1 and restart Kamailio (auto-rolls-back if it doesn't come back healthy)."
+        required: false
+        default: "no"
+      rollback:
+        description: "Type 'yes' to restore the pre-flip kamailio.cfg backup and restart Kamailio."
+        required: false
+        default: "no"
+
+jobs:
+  kamailio:
+    runs-on: ubuntu-latest
+    concurrency:
+      # Share the deploy lock so this never races a deploy on the box.
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run kamailio usrloc op
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          SHOW: ${{ github.event.inputs.show }}
+          ENABLE: ${{ github.event.inputs.enable_usrloc_db }}
+          ROLLBACK: ${{ github.event.inputs.rollback }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$SHOW" "$ENABLE" "$ROLLBACK" <<'EOF'
+          set -u
+          SHOW="${1:-no}"
+          ENABLE="${2:-no}"
+          ROLLBACK="${3:-no}"
+
+          CFG=/root/sip-platform/kamailio/etc/kamailio.cfg
+          KAM=sip-platform-kamailio-1
+          PG=sip-platform-postgres-1
+          PGUSER=$(grep -E '^POSTGRES_USER=' /root/sip-platform/.env 2>/dev/null | cut -d= -f2-); PGUSER=${PGUSER:-sip}
+          PGDB=$(grep -E '^POSTGRES_DB=' /root/sip-platform/.env 2>/dev/null | cut -d= -f2-); PGDB=${PGDB:-sipplatform}
+
+          psql_q() { docker exec "$PG" psql -U "$PGUSER" -d "$PGDB" -tAc "$1" 2>&1; }
+          kam_define() { grep -oE "#!define[[:space:]]+WITH_USRLOCDB[[:space:]]+[0-9]+" "$CFG" | grep -oE "[0-9]+$"; }
+          kam_health() {
+            # Healthy = container running and no recent usrloc/db load error.
+            local st; st=$(docker inspect -f '{{.State.Status}}' "$KAM" 2>/dev/null || echo missing)
+            [ "$st" = "running" ] || { echo "kamailio state: $st"; return 1; }
+            if docker logs --since 40s "$KAM" 2>&1 | grep -qiE "invalid table version|unsupported version|can't load|cannot connect|ERROR:.*(usrloc|db_postgres|database)"; then
+              echo "kamailio logs show a db/usrloc error:"
+              docker logs --since 40s "$KAM" 2>&1 | grep -iE "version|usrloc|db_postgres|database|ERROR" | tail -10
+              return 1
+            fi
+            return 0
+          }
+
+          if [ "$SHOW" = "yes" ]; then
+            echo "===== kamailio.cfg usrloc / DBURL lines ====="
+            grep -nE "WITH_USRLOCDB|DBURL|modparam\(\"usrloc\"" "$CFG" || true
+            echo "current WITH_USRLOCDB = $(kam_define)"
+            echo "===== location table ====="
+            echo "table_version: $(psql_q "SELECT table_version FROM version WHERE table_name='location';")"
+            echo "row count:     $(psql_q "SELECT count(*) FROM location;")"
+            echo "===== kamailio container ====="
+            docker ps --filter name=kamailio --format '{{.Names}}  {{.Status}}' || true
+          fi
+
+          if [ "$ROLLBACK" = "yes" ]; then
+            if [ -f "$CFG.bak.usrloc" ]; then
+              echo "restoring $CFG from backup and restarting kamailio..."
+              cp -a "$CFG.bak.usrloc" "$CFG"
+              docker compose -p sip-platform restart kamailio
+              sleep 8
+              kam_health && echo "rollback complete; kamailio healthy." || echo "WARNING: kamailio not healthy after rollback — investigate."
+            else
+              echo "no backup ($CFG.bak.usrloc) found; nothing to roll back."
+            fi
+          fi
+
+          if [ "$ENABLE" = "yes" ]; then
+            echo "===== enable usrloc db_mode ====="
+            ver=$(psql_q "SELECT table_version FROM version WHERE table_name='location';")
+            if [ "$ver" != "9" ]; then
+              echo "ABORT: location table_version='$ver' (need 9). Deploy migration 0028 first."; exit 1
+            fi
+            if ! psql_q "SELECT 1 FROM location LIMIT 1;" >/dev/null 2>&1 && ! psql_q "SELECT count(*) FROM location;" | grep -qE '^[0-9]+$'; then
+              echo "ABORT: location table not queryable. Deploy migration 0028 first."; exit 1
+            fi
+            cur=$(kam_define)
+            echo "current WITH_USRLOCDB = $cur"
+            if [ "$cur" = "1" ]; then echo "already enabled; nothing to do."; exit 0; fi
+            cp -a "$CFG" "$CFG.bak.usrloc"
+            sed -i -E 's/(#!define[[:space:]]+WITH_USRLOCDB[[:space:]]+)0/\11/' "$CFG"
+            echo "after edit: WITH_USRLOCDB = $(kam_define)"
+            if [ "$(kam_define)" != "1" ]; then
+              echo "ABORT: edit did not take (define still $(kam_define)); restoring."; cp -a "$CFG.bak.usrloc" "$CFG"; exit 1
+            fi
+            echo "restarting kamailio..."
+            docker compose -p sip-platform restart kamailio
+            sleep 10
+            if kam_health; then
+              echo "kamailio healthy after flip."
+              sleep 20
+              echo "location rows now: $(psql_q "SELECT count(*) FROM location;")"
+              echo "DONE: usrloc db_mode enabled. Presence will populate as phones re-register."
+            else
+              echo "ROLLING BACK: kamailio unhealthy after flip."
+              cp -a "$CFG.bak.usrloc" "$CFG"
+              docker compose -p sip-platform restart kamailio
+              sleep 8
+              kam_health && echo "rolled back; kamailio healthy again." || echo "CRITICAL: kamailio still unhealthy after rollback — investigate now."
+              exit 1
+            fi
+          fi
+          EOF
