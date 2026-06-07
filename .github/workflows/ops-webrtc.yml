@@ -61,8 +61,21 @@ jobs:
           set -e
           echo "--- shipping kamailio.cfg ---"
           scp -o IdentitiesOnly=yes kamailio/etc/kamailio.cfg "$USER@$HOST:$DIR/kamailio/etc/kamailio.cfg"
-          echo "--- parse-check the NEW config (running kamailio keeps its loaded config; this only validates) ---"
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" 'docker exec sip-platform-kamailio-1 kamailio -c -f /etc/kamailio/kamailio.cfg 2>&1 | tail -12'
+          echo "--- injecting real DBURL from the kamailio container env (repo keeps a placeholder; secret stays on the box) + parse-check ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$DIR" <<'EOF'
+          set -u
+          DIR="${1:-/root/sip-platform}"
+          KC=sip-platform-kamailio-1
+          DBU=$(docker inspect "$KC" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^DB_URL=//p' | head -1)
+          if [ -n "$DBU" ]; then
+            sed -i "s|^#!define DBURL .*|#!define DBURL \"$DBU\"|" "$DIR/kamailio/etc/kamailio.cfg"
+            echo "DBURL injected from env (value not shown)"
+          else
+            echo "WARN: DB_URL env not found on kamailio container — config left as-is"
+          fi
+          echo "--- parse-check (running kamailio keeps its loaded config; this only validates) ---"
+          docker exec "$KC" kamailio -c -f /etc/kamailio/kamailio.cfg 2>&1 | tail -8
+          EOF
 
       - name: Restart kamailio (production)
         if: ${{ github.event.inputs.kamrestart == 'yes' }}
