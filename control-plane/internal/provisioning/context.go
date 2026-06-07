@@ -22,6 +22,18 @@ type RenderContext struct {
 	Lines     []LineCtx
 	SIP       SIPCtx
 	Provision ProvisionCtx
+	// Paging lists the multicast paging groups this device should listen on
+	// (PTT increment 3). Empty unless the device's extensions belong to one or
+	// more `multicast`-mode paging groups with an address configured.
+	Paging []PagingMulticastCtx
+}
+
+// PagingMulticastCtx describes one multicast listen address for a phone.
+type PagingMulticastCtx struct {
+	Channel int    // 1-based listen slot
+	Label   string // group name (shown on the phone)
+	Addr    string // multicast IP
+	Port    int    // multicast port
 }
 
 type TenantCtx struct {
@@ -95,6 +107,29 @@ func buildContext(cfg *store.DeviceConfig, sip SIPCtx, prov ProvisionCtx) Render
 		SIP:       sip,
 		Provision: prov,
 	}
+}
+
+// pagingMulticastCtx converts multicast paging groups into per-channel listen
+// entries for the templates, skipping any without an address.
+func pagingMulticastCtx(groups []store.PagingGroup) []PagingMulticastCtx {
+	out := make([]PagingMulticastCtx, 0, len(groups))
+	ch := 1
+	for _, g := range groups {
+		if g.MulticastAddr == "" {
+			continue
+		}
+		out = append(out, PagingMulticastCtx{
+			Channel: ch,
+			Label:   g.Name,
+			Addr:    g.MulticastAddr,
+			Port:    g.MulticastPort,
+		})
+		ch++
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func firstNonEmpty(s ...string) string {

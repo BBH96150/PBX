@@ -233,6 +233,44 @@ func (s *Store) ListPagingMembersDetailed(ctx context.Context, groupID uuid.UUID
 	return out, rows.Err()
 }
 
+// ListMulticastPagingForExtensions returns the enabled multicast paging groups
+// (with an address configured) that any of the given extensions belong to,
+// deduped and ordered by name. Used by device provisioning to tell a phone
+// which multicast addresses to listen on. Returns nil for an empty input.
+func (s *Store) ListMulticastPagingForExtensions(ctx context.Context, extIDs []uuid.UUID) ([]PagingGroup, error) {
+	if len(extIDs) == 0 {
+		return nil, nil
+	}
+	const q = `
+		SELECT DISTINCT pg.id, pg.tenant_id, COALESCE(pg.extension,''), pg.name,
+		       pg.mode, COALESCE(pg.multicast_addr,''), COALESCE(pg.multicast_port,0),
+		       pg.enabled, pg.created_at, pg.updated_at
+		  FROM paging_groups pg
+		  JOIN paging_group_members m ON m.paging_group_id = pg.id
+		 WHERE pg.mode = 'multicast'
+		   AND pg.enabled = true
+		   AND pg.multicast_addr IS NOT NULL
+		   AND m.extension_id = ANY($1)
+		 ORDER BY pg.name`
+	rows, err := s.DB.Query(ctx, q, extIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PagingGroup
+	for rows.Next() {
+		var pg PagingGroup
+		if err := rows.Scan(
+			&pg.ID, &pg.TenantID, &pg.Extension, &pg.Name, &pg.Mode,
+			&pg.MulticastAddr, &pg.MulticastPort, &pg.Enabled, &pg.CreatedAt, &pg.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, pg)
+	}
+	return out, rows.Err()
+}
+
 // PagingRoutingInfo is everything the dialplan handler needs in one trip.
 type PagingRoutingInfo struct {
 	Group   PagingGroup

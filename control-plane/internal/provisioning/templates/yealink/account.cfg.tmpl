@@ -43,3 +43,11 @@ features.dnd.enable                            = 1
 features.call_waiting.enable                   = 1
 features.auto_answer                           = 0
 phone_setting.ring_type                        = Ring1.wav
+{{if .Paging}}
+# --- Multicast paging / PTT (increment 3) -----------------------------------
+# A page barges in over an active call; the phone auto-answers the multicast.
+multicast.receive_priority.enable              = 1
+multicast.receive_priority.barge              = 1
+{{range .Paging}}multicast.listen_address.{{.Channel}}.ip_address = {{.Addr}}:{{.Port}}
+multicast.listen_address.{{.Channel}}.label      = {{.Label}}
+{{end}}{{end}}

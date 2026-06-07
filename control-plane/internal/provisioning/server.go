@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
@@ -109,6 +110,19 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, cfg *store.Devic
 		PublicHost: s.cfg.PublicHost,
 		Token:      cfg.Device.Token,
 	})
+
+	// PTT increment 3: tell the phone which multicast paging groups to listen
+	// on (the ones its bound extensions belong to). Best-effort — a lookup
+	// failure must not break provisioning.
+	extIDs := make([]uuid.UUID, 0, len(cfg.Lines))
+	for _, l := range cfg.Lines {
+		extIDs = append(extIDs, l.ExtensionID)
+	}
+	if groups, err := s.store.ListMulticastPagingForExtensions(r.Context(), extIDs); err != nil {
+		slog.Warn("multicast paging lookup failed", "mac", cfg.Device.MAC, "err", err)
+	} else {
+		rc.Paging = pagingMulticastCtx(groups)
+	}
 
 	var buf bytes.Buffer
 	if err := s.registry.execute(&buf, tmpl, rc); err != nil {

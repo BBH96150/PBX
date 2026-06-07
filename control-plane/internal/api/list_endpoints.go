@@ -58,6 +58,32 @@ func (s *Server) listPagingGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gs)
 }
 
+// listPagingGroupMembers returns the member extensions of one paging group —
+// the roster a native PTT client renders for a channel. Tenant-scoped: the
+// group must belong to the path tenant.
+func (s *Server) listPagingGroupMembers(w http.ResponseWriter, r *http.Request) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	gid, err := uuid.Parse(chi.URLParam(r, "groupID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid group id")
+		return
+	}
+	if _, err := s.store.GetPagingGroupForTenant(r.Context(), tid, gid); err != nil {
+		writeErr(w, http.StatusNotFound, "no such paging group for tenant")
+		return
+	}
+	members, err := s.store.ListPagingMembersDetailed(r.Context(), gid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
 // listVoicemailMessages returns an extension's voicemail messages (metadata
 // only — the audio path is never serialized).
 func (s *Server) listVoicemailMessages(w http.ResponseWriter, r *http.Request) {
