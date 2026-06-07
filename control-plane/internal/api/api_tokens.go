@@ -14,7 +14,7 @@ import (
 type createAPITokenReq struct {
 	TenantID  *uuid.UUID `json:"tenant_id,omitempty"` // nil → super-admin
 	Name      string     `json:"name"`
-	Scope     string     `json:"scope"`     // read|write|admin (default write)
+	Scope     string     `json:"scope"`                // read|write|admin (default write)
 	ExpiresIn string     `json:"expires_in,omitempty"` // duration string, e.g. "720h"; optional
 }
 

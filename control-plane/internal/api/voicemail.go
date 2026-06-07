@@ -11,11 +11,11 @@ import (
 )
 
 type createVoicemailBoxReq struct {
-	PIN                string `json:"pin"`
-	Email              string `json:"email"`
-	Timezone           string `json:"timezone"`
-	MaxMessages        int    `json:"max_messages"`
-	MaxMsgDurationSec  int    `json:"max_msg_duration_sec"`
+	PIN               string `json:"pin"`
+	Email             string `json:"email"`
+	Timezone          string `json:"timezone"`
+	MaxMessages       int    `json:"max_messages"`
+	MaxMsgDurationSec int    `json:"max_msg_duration_sec"`
 }
 
 func (s *Server) createVoicemailBox(w http.ResponseWriter, r *http.Request) {

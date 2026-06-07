@@ -480,3 +480,38 @@ func loadFilteredCallcenterConfig(ctx context.Context, s *Store, kamailioTarget,
 	}
 	return cfg, arows.Err()
 }
+
+// ListQueuesForTenant returns a tenant's enabled call queues.
+func (s *Store) ListQueuesForTenant(ctx context.Context, tenantID uuid.UUID) ([]Queue, error) {
+	const q = `
+		SELECT id, tenant_id, COALESCE(extension,''), name, strategy, moh_sound,
+		       COALESCE(record_template,''), time_base_score,
+		       max_wait_time, max_wait_no_agent, max_wait_no_agent_time_reached,
+		       tier_rules_apply, tier_rule_wait_second, tier_rule_no_agent_no_wait,
+		       discard_abandoned_after, abandoned_resume_allowed,
+		       COALESCE(announce_sound,''),
+		       enabled, created_at, updated_at
+		  FROM queues WHERE tenant_id = $1 AND enabled = true ORDER BY extension NULLS LAST`
+	rows, err := s.DB.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Queue
+	for rows.Next() {
+		var qq Queue
+		if err := rows.Scan(
+			&qq.ID, &qq.TenantID, &qq.Extension, &qq.Name, &qq.Strategy, &qq.MOHSound,
+			&qq.RecordTemplate, &qq.TimeBaseScore,
+			&qq.MaxWaitTime, &qq.MaxWaitNoAgent, &qq.MaxWaitNoAgentTimeReached,
+			&qq.TierRulesApply, &qq.TierRuleWaitSecond, &qq.TierRuleNoAgentNoWait,
+			&qq.DiscardAbandonedAfter, &qq.AbandonedResumeAllowed,
+			&qq.AnnounceSound,
+			&qq.Enabled, &qq.CreatedAt, &qq.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, qq)
+	}
+	return out, rows.Err()
+}

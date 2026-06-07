@@ -36,9 +36,12 @@ Public (no auth): `GET /v1/version`, `POST /v1/signup`,
 | `GET /v1/tenants/{id}/contacts` | directory contacts (`?q=` search) |
 | `GET /v1/tenants/{id}/dids` | phone numbers |
 | `GET /v1/tenants/{id}/ring-groups` | ring groups |
+| `GET /v1/tenants/{id}/queues` | call queues |
+| `GET /v1/tenants/{id}/devices` | provisioned devices (provisioning token omitted) |
 | `GET /v1/devices/{mac}` | a provisioned device |
 | `GET /v1/carriers` | available carriers |
 | `GET /v1/extensions/{id}/voicemail` | a voicemail box |
+| `GET /v1/extensions/{id}/voicemail/messages` | voicemail messages (metadata; no audio path) |
 
 **CDR filters** (`GET …/cdrs`): `limit` (default 100, max 10000),
 `since`/`until` (RFC3339), `direction` (`inbound|outbound|internal`), `q`

@@ -1744,33 +1744,8 @@ func mustExtensions(ctx context.Context, st *store.Store, tid uuid.UUID) []store
 }
 
 func mustDevices(ctx context.Context, st *store.Store, tid uuid.UUID) []store.Device {
-	const q = `
-		SELECT mac::text, tenant_id, vendor, model, COALESCE(firmware,''),
-		       provisioning_token, COALESCE(label,''),
-		       last_provisioned_at, COALESCE(host(last_provisioned_ip),''),
-		       COALESCE(user_agent,''),
-		       rps_synced_at, COALESCE(rps_last_error,''),
-		       created_at, updated_at
-		  FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`
-	rows, err := st.DB.Query(ctx, q, tid)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []store.Device
-	for rows.Next() {
-		var d store.Device
-		if err := rows.Scan(
-			&d.MAC, &d.TenantID, &d.Vendor, &d.Model, &d.Firmware,
-			&d.ProvisioningToken, &d.Label,
-			&d.LastProvisionedAt, &d.LastProvisionedIP, &d.UserAgent,
-			&d.RPSSyncedAt, &d.RPSLastError,
-			&d.CreatedAt, &d.UpdatedAt,
-		); err == nil {
-			out = append(out, d)
-		}
-	}
-	return out
+	d, _ := st.ListDevicesForTenant(ctx, tid)
+	return d
 }
 
 func mustSIPDomains(ctx context.Context, st *store.Store, tid uuid.UUID) []store.SIPDomain {
@@ -1821,34 +1796,5 @@ func listIVRs(ctx context.Context, st *store.Store, tid uuid.UUID) ([]store.IVR,
 }
 
 func listQueues(ctx context.Context, st *store.Store, tid uuid.UUID) ([]store.Queue, error) {
-	const q = `
-		SELECT id, tenant_id, COALESCE(extension,''), name, strategy, moh_sound,
-		       COALESCE(record_template,''), time_base_score,
-		       max_wait_time, max_wait_no_agent, max_wait_no_agent_time_reached,
-		       tier_rules_apply, tier_rule_wait_second, tier_rule_no_agent_no_wait,
-		       discard_abandoned_after, abandoned_resume_allowed,
-		       COALESCE(announce_sound,''),
-		       enabled, created_at, updated_at
-		  FROM queues WHERE tenant_id = $1 AND enabled = true ORDER BY extension NULLS LAST`
-	rows, err := st.DB.Query(ctx, q, tid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []store.Queue
-	for rows.Next() {
-		var q store.Queue
-		if err := rows.Scan(
-			&q.ID, &q.TenantID, &q.Extension, &q.Name, &q.Strategy, &q.MOHSound,
-			&q.RecordTemplate, &q.TimeBaseScore,
-			&q.MaxWaitTime, &q.MaxWaitNoAgent, &q.MaxWaitNoAgentTimeReached,
-			&q.TierRulesApply, &q.TierRuleWaitSecond, &q.TierRuleNoAgentNoWait,
-			&q.DiscardAbandonedAfter, &q.AbandonedResumeAllowed,
-			&q.AnnounceSound,
-			&q.Enabled, &q.CreatedAt, &q.UpdatedAt,
-		); err == nil {
-			out = append(out, q)
-		}
-	}
-	return out, nil
+	return st.ListQueuesForTenant(ctx, tid)
 }

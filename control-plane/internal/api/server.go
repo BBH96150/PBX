@@ -90,9 +90,9 @@ func (s *Server) Router() http.Handler {
 		"/v1/freeswitch/dialplan",
 		"/v1/freeswitch/directory",
 		"/v1/freeswitch/configuration",
-		"/v1/signup", // Phase 4.4: public self-serve signup
+		"/v1/signup",         // Phase 4.4: public self-serve signup
 		"/v1/invites/accept", // Phase 4.5: invite acceptance is public
-		"/v1/password-reset",  // Phase 4.5: forgot-password endpoints are public
+		"/v1/password-reset", // Phase 4.5: forgot-password endpoints are public
 	}))
 
 	r.Get("/healthz", healthz)
@@ -117,7 +117,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/", RequireScope("admin", s.listInvites))
 	})
 	r.Delete("/v1/invites/{inviteID}", RequireScope("admin", s.revokeInvite))
-	r.Post("/v1/invites/accept", s.acceptInvite)              // public
+	r.Post("/v1/invites/accept", s.acceptInvite)                 // public
 	r.Post("/v1/password-reset/request", s.requestPasswordReset) // public
 	r.Post("/v1/password-reset/confirm", s.confirmPasswordReset) // public
 
@@ -138,6 +138,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/dids", s.listDIDs)
 			r.Post("/ring-groups", s.createRingGroup)
 			r.Get("/ring-groups", s.listRingGroups)
+			r.Get("/queues", s.listQueues)
+			r.Get("/devices", s.listDevices)
 		})
 	})
 
@@ -152,6 +154,7 @@ func (s *Server) Router() http.Handler {
 	r.Route("/v1/extensions/{extensionID}/voicemail", func(r chi.Router) {
 		r.Post("/", s.createVoicemailBox)
 		r.Get("/", s.getVoicemailBox)
+		r.Get("/messages", s.listVoicemailMessages)
 	})
 	r.Patch("/v1/extensions/{extensionID}/features", s.updateExtensionFeatures)
 

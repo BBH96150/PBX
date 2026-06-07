@@ -244,3 +244,35 @@ func insertColons(s string) string {
 	}
 	return b.String()
 }
+
+// ListDevicesForTenant returns a tenant's provisioned devices.
+func (s *Store) ListDevicesForTenant(ctx context.Context, tenantID uuid.UUID) ([]Device, error) {
+	const q = `
+		SELECT mac::text, tenant_id, vendor, model, COALESCE(firmware,''),
+		       provisioning_token, COALESCE(label,''),
+		       last_provisioned_at, COALESCE(host(last_provisioned_ip),''),
+		       COALESCE(user_agent,''),
+		       rps_synced_at, COALESCE(rps_last_error,''),
+		       created_at, updated_at
+		  FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`
+	rows, err := s.DB.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Device
+	for rows.Next() {
+		var d Device
+		if err := rows.Scan(
+			&d.MAC, &d.TenantID, &d.Vendor, &d.Model, &d.Firmware,
+			&d.ProvisioningToken, &d.Label,
+			&d.LastProvisionedAt, &d.LastProvisionedIP, &d.UserAgent,
+			&d.RPSSyncedAt, &d.RPSLastError,
+			&d.CreatedAt, &d.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

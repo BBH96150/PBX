@@ -13,10 +13,10 @@ import (
 
 type signupReq struct {
 	CompanyName  string `json:"company_name"`
-	Slug         string `json:"slug"`           // optional, auto-derived if empty
-	Plan         string `json:"plan"`           // trial|starter|pro|enterprise, default trial
-	BillingEmail string `json:"billing_email"`  // optional
-	BillingPhone string `json:"billing_phone"`  // optional
+	Slug         string `json:"slug"`          // optional, auto-derived if empty
+	Plan         string `json:"plan"`          // trial|starter|pro|enterprise, default trial
+	BillingEmail string `json:"billing_email"` // optional
+	BillingPhone string `json:"billing_phone"` // optional
 
 	AdminEmail       string `json:"admin_email"`
 	AdminPassword    string `json:"admin_password"`

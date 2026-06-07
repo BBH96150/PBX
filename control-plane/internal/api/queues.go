@@ -22,11 +22,11 @@ func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 }
 
 type createQueueReq struct {
-	Extension    string `json:"extension"`
-	Name         string `json:"name"`
-	Strategy     string `json:"strategy"`
-	MOHSound     string `json:"moh_sound"`
-	MaxWaitTime  int    `json:"max_wait_time"`
+	Extension   string `json:"extension"`
+	Name        string `json:"name"`
+	Strategy    string `json:"strategy"`
+	MOHSound    string `json:"moh_sound"`
+	MaxWaitTime int    `json:"max_wait_time"`
 }
 
 func (s *Server) createQueue(w http.ResponseWriter, r *http.Request) {

@@ -12,17 +12,17 @@ import (
 )
 
 type createIVRReq struct {
-	Name                 string `json:"name"`
-	Extension            string `json:"extension"`
-	GreetingLong         string `json:"greeting_long"`
-	GreetingShort        string `json:"greeting_short"`
-	InvalidSound         string `json:"invalid_sound"`
-	ExitSound            string `json:"exit_sound"`
-	TimeoutMS            int    `json:"timeout_ms"`
-	InterDigitTimeoutMS  int    `json:"inter_digit_timeout_ms"`
-	MaxFailures          int    `json:"max_failures"`
-	MaxTimeouts          int    `json:"max_timeouts"`
-	DigitLen             int    `json:"digit_len"`
+	Name                string `json:"name"`
+	Extension           string `json:"extension"`
+	GreetingLong        string `json:"greeting_long"`
+	GreetingShort       string `json:"greeting_short"`
+	InvalidSound        string `json:"invalid_sound"`
+	ExitSound           string `json:"exit_sound"`
+	TimeoutMS           int    `json:"timeout_ms"`
+	InterDigitTimeoutMS int    `json:"inter_digit_timeout_ms"`
+	MaxFailures         int    `json:"max_failures"`
+	MaxTimeouts         int    `json:"max_timeouts"`
+	DigitLen            int    `json:"digit_len"`
 }
 
 func (s *Server) createIVR(w http.ResponseWriter, r *http.Request) {
@@ -41,18 +41,18 @@ func (s *Server) createIVR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.store.CreateIVR(r.Context(), store.CreateIVRInput{
-		TenantID:             tid,
-		Name:                 req.Name,
-		Extension:            req.Extension,
-		GreetingLong:         req.GreetingLong,
-		GreetingShort:        req.GreetingShort,
-		InvalidSound:         req.InvalidSound,
-		ExitSound:            req.ExitSound,
-		TimeoutMS:            req.TimeoutMS,
-		InterDigitTimeoutMS:  req.InterDigitTimeoutMS,
-		MaxFailures:          req.MaxFailures,
-		MaxTimeouts:          req.MaxTimeouts,
-		DigitLen:             req.DigitLen,
+		TenantID:            tid,
+		Name:                req.Name,
+		Extension:           req.Extension,
+		GreetingLong:        req.GreetingLong,
+		GreetingShort:       req.GreetingShort,
+		InvalidSound:        req.InvalidSound,
+		ExitSound:           req.ExitSound,
+		TimeoutMS:           req.TimeoutMS,
+		InterDigitTimeoutMS: req.InterDigitTimeoutMS,
+		MaxFailures:         req.MaxFailures,
+		MaxTimeouts:         req.MaxTimeouts,
+		DigitLen:            req.DigitLen,
 	})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())

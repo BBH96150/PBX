@@ -12,13 +12,13 @@ import (
 )
 
 type createRingGroupReq struct {
-	Extension       string     `json:"extension"`
-	Name            string     `json:"name"`
-	Strategy        string     `json:"strategy"`         // simultaneous|sequential|round_robin|random
-	RingTimeoutSec  int        `json:"ring_timeout_sec"` // default 30
-	FallbackKind    string     `json:"fallback_kind"`    // extension|ring_group|voicemail|ivr|hangup
-	FallbackID      *uuid.UUID `json:"fallback_id"`
-	CallerIDPrefix  string     `json:"caller_id_prefix"`
+	Extension      string     `json:"extension"`
+	Name           string     `json:"name"`
+	Strategy       string     `json:"strategy"`         // simultaneous|sequential|round_robin|random
+	RingTimeoutSec int        `json:"ring_timeout_sec"` // default 30
+	FallbackKind   string     `json:"fallback_kind"`    // extension|ring_group|voicemail|ivr|hangup
+	FallbackID     *uuid.UUID `json:"fallback_id"`
+	CallerIDPrefix string     `json:"caller_id_prefix"`
 }
 
 func (s *Server) createRingGroup(w http.ResponseWriter, r *http.Request) {
@@ -37,14 +37,14 @@ func (s *Server) createRingGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rg, err := s.store.CreateRingGroup(r.Context(), store.CreateRingGroupInput{
-		TenantID:        tid,
-		Extension:       req.Extension,
-		Name:            req.Name,
-		Strategy:        req.Strategy,
-		RingTimeoutSec:  req.RingTimeoutSec,
-		FallbackKind:    req.FallbackKind,
-		FallbackID:      req.FallbackID,
-		CallerIDPrefix:  req.CallerIDPrefix,
+		TenantID:       tid,
+		Extension:      req.Extension,
+		Name:           req.Name,
+		Strategy:       req.Strategy,
+		RingTimeoutSec: req.RingTimeoutSec,
+		FallbackKind:   req.FallbackKind,
+		FallbackID:     req.FallbackID,
+		CallerIDPrefix: req.CallerIDPrefix,
 	})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
