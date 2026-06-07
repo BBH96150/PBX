@@ -1,0 +1,81 @@
+name: Ops · webrtc media
+
+# Phase 2 (live WebRTC PTT) operations over the deploy SSH key.
+#  - inspect: pull the rtpengine image + show its entrypoint/cmd + --help, so we
+#    configure the compose service correctly (read-only-ish: pulls an image).
+#  - up: bring up the rtpengine service (docker compose up -d rtpengine) — CI
+#    doesn't start new containers, so this is how it first launches.
+#  - verify: show rtpengine logs + ng-protocol reachability from Kamailio.
+on:
+  workflow_dispatch:
+    inputs:
+      inspect:
+        description: "Type 'yes' to pull + inspect the rtpengine image."
+        required: false
+        default: "no"
+      up:
+        description: "Type 'yes' to docker compose up -d rtpengine."
+        required: false
+        default: "no"
+      verify:
+        description: "Type 'yes' to show rtpengine logs + ng reachability."
+        required: false
+        default: "no"
+
+jobs:
+  webrtc:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-hetzner
+      cancel-in-progress: false
+    env:
+      DIR: /root/sip-platform
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Ops
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          INSPECT: ${{ github.event.inputs.inspect }}
+          UP: ${{ github.event.inputs.up }}
+          VERIFY: ${{ github.event.inputs.verify }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$INSPECT" "$UP" "$VERIFY" "$DIR" <<'EOF'
+          set -u
+          INSPECT="${1:-no}"; UP="${2:-no}"; VERIFY="${3:-no}"; DIR="${4:-/root/sip-platform}"
+          IMG=drachtio/rtpengine:latest
+
+          if [ "$INSPECT" = "yes" ]; then
+            echo "===== pull $IMG ====="; docker pull "$IMG" 2>&1 | tail -3
+            echo "===== entrypoint / cmd ====="
+            docker inspect --format 'ENTRYPOINT={{json .Config.Entrypoint}} CMD={{json .Config.Cmd}}' "$IMG" 2>&1
+            echo "===== rtpengine --help (first 60 lines) ====="
+            docker run --rm --entrypoint rtpengine "$IMG" --help 2>&1 | head -60 || \
+              docker run --rm "$IMG" --help 2>&1 | head -60 || echo "(--help failed both ways)"
+          fi
+
+          if [ "$UP" = "yes" ]; then
+            echo "===== compose config for rtpengine ====="
+            cd "$DIR" && docker compose -p sip-platform config 2>&1 | sed -n '/rtpengine/,/^[a-z]/p' | head -40
+            echo "===== up -d rtpengine ====="
+            cd "$DIR" && docker compose -p sip-platform up -d rtpengine 2>&1 | tail -20
+          fi
+
+          if [ "$VERIFY" = "yes" ]; then
+            echo "===== rtpengine container ====="
+            docker ps --filter name=rtpengine --format '{{.Names}}  {{.Status}}  {{.Ports}}' 2>&1
+            echo "===== rtpengine logs (last 25) ====="
+            docker logs --tail 25 sip-platform-rtpengine-1 2>&1 || docker logs --tail 25 $(docker ps -qf name=rtpengine) 2>&1
+            echo "===== ng reachability from kamailio (expect a bencoded pong) ====="
+            # rtpengine ng 'ping' = bencode d...e; send a minimal ping cookie via nc from the kamailio container.
+            docker exec sip-platform-kamailio-1 sh -c 'printf "%s" "pingtest_ d7:command4:pinge" | timeout 2 nc -u -w1 rtpengine 22222' 2>&1 | head -c 200 || echo "(nc unavailable or no reply)"
+            echo
+          fi
+          echo "===== done ====="
+          EOF
