@@ -73,6 +73,8 @@ jobs:
           fi
           ESLPW=$(docker exec sip-platform-control-plane-1 printenv ESL_PASSWORD 2>/dev/null); ESLPW=${ESLPW:-ClueCon}
           fscli() { docker exec "$FS" fs_cli -p "$ESLPW" -x "$1" 2>&1; }
+          echo "--- prepare blast dir (control-plane runs as uid 65532; recordings vol is root-owned) ---"
+          docker exec "$FS" sh -c 'mkdir -p /var/lib/freeswitch/recordings/blasts && chown -R 65532:65532 /var/lib/freeswitch/recordings/blasts && ls -ld /var/lib/freeswitch/recordings/blasts'
           echo "--- reloadxml ---"; fscli "reloadxml"
           echo "--- load mod_conference (idempotent) ---"; fscli "load mod_conference"
           echo "--- verify: conference profile 'paging' usable ---"
