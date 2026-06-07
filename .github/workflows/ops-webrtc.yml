@@ -21,6 +21,10 @@ on:
         description: "Type 'yes' to show rtpengine logs + ng reachability."
         required: false
         default: "no"
+      kamcheck:
+        description: "Type 'yes' to check rtpengine.so in the kamailio image + parse the current config."
+        required: false
+        default: "no"
 
 jobs:
   webrtc:
@@ -45,11 +49,22 @@ jobs:
           INSPECT: ${{ github.event.inputs.inspect }}
           UP: ${{ github.event.inputs.up }}
           VERIFY: ${{ github.event.inputs.verify }}
+          KAMCHECK: ${{ github.event.inputs.kamcheck }}
         run: |
-          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$INSPECT" "$UP" "$VERIFY" "$DIR" <<'EOF'
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$INSPECT" "$UP" "$VERIFY" "$DIR" "$KAMCHECK" <<'EOF'
           set -u
-          INSPECT="${1:-no}"; UP="${2:-no}"; VERIFY="${3:-no}"; DIR="${4:-/root/sip-platform}"
+          INSPECT="${1:-no}"; UP="${2:-no}"; VERIFY="${3:-no}"; DIR="${4:-/root/sip-platform}"; KAMCHECK="${5:-no}"
           IMG=drachtio/rtpengine:latest
+
+          if [ "$KAMCHECK" = "yes" ]; then
+            KC=sip-platform-kamailio-1
+            echo "===== rtpengine.so present in kamailio container? ====="
+            docker exec "$KC" sh -c 'ls -1 $(kamailio -V 2>/dev/null | grep -oE "/[^ ]*modules" | head -1)/rtpengine.so 2>/dev/null || find / -name rtpengine.so 2>/dev/null | head' 2>&1
+            echo "===== kamailio version ====="
+            docker exec "$KC" kamailio -v 2>&1 | head -3
+            echo "===== parse CURRENT config (baseline; expect 'config file ok') ====="
+            docker exec "$KC" kamailio -c -f /etc/kamailio/kamailio.cfg 2>&1 | tail -8
+          fi
 
           if [ "$INSPECT" = "yes" ]; then
             echo "===== pull $IMG ====="; docker pull "$IMG" 2>&1 | tail -3
