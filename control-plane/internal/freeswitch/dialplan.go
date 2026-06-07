@@ -126,6 +126,10 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request, destNum,
 					h.routeQueue(w, q, destNum, "default")
 					return
 				}
+				if pg, pgErr := h.store.LookupPagingGroupByExtension(ctx, tenantDomain, destNum); pgErr == nil {
+					h.routePaging(w, pg, destNum, "default")
+					return
+				}
 			}
 			writeHangup(w, "default", "NO_USER_RESPONSE")
 			return
@@ -653,6 +657,57 @@ func (h *Handler) routeRingGroup(ctx context.Context, w http.ResponseWriter, inf
 		Name:    "ringgroup-" + displayDest,
 		Actions: actions,
 	})
+}
+
+// routePaging renders a one-way intercom page: the caller is dropped into a
+// `…@paging` conference and every group member is auto-outcalled muted with
+// hands-free auto-answer, so the caller talks and members only listen. Works
+// on any registered phone/softphone regardless of the group's `mode` (multicast
+// and native PTT layer additional out-of-band delivery on top of this; see
+// increments 3/4). The conference ends when the pager hangs up.
+func (h *Handler) routePaging(w http.ResponseWriter, info *store.PagingRoutingInfo, displayDest, context string) {
+	actions := buildPagingActions(info, h.sipTarget)
+	if actions == nil {
+		slog.Info("paging group has no active members", "group", info.Group.ID)
+		writeHangup(w, context, "NO_USER_RESPONSE")
+		return
+	}
+	writeDialplan(w, dialplanData{
+		Context: context,
+		Name:    "paging-" + displayDest,
+		Actions: actions,
+	})
+}
+
+// buildPagingActions is the pure builder for the conference-page dialplan.
+// Returns nil if the group has no members to page.
+func buildPagingActions(info *store.PagingRoutingInfo, sipTarget string) []dialplanAction {
+	if len(info.Members) == 0 {
+		return nil
+	}
+	// One muted, auto-answering outcall per member. mod_conference splits the
+	// auto-outcall list on spaces and dials each leg independently; the prefix
+	// var prepends sip_auto_answer so phones pick up hands-free.
+	dials := make([]string, 0, len(info.Members))
+	for _, m := range info.Members {
+		dials = append(dials, fmt.Sprintf("sofia/internal/sip:%s@%s;fs_path=sip:%s;lr",
+			m.SIPUsername, m.SIPDomain, sipTarget))
+	}
+	confName := "paging_" + info.Group.ID.String()
+	return []dialplanAction{
+		{App: "set", Data: "x_call_direction=internal"},
+		{App: "set", Data: "x_tenant_id=" + info.Group.TenantID.String()},
+		{App: "set", Data: "x_paging_group_id=" + info.Group.ID.String()},
+		{App: "answer"},
+		{App: "set", Data: "conference_auto_outcall_timeout=30"},
+		// Called members are muted → one-way page (caller talks, members listen).
+		{App: "set", Data: "conference_auto_outcall_flags=mute"},
+		{App: "set", Data: "conference_auto_outcall_caller_id_name=Paging"},
+		{App: "set", Data: "conference_auto_outcall_prefix={sip_auto_answer=true,ignore_early_media=true}"},
+		{App: "conference_set_auto_outcall", Data: strings.Join(dials, " ")},
+		// Pager joins as moderator; endconf tears the page down when they leave.
+		{App: "conference", Data: confName + "@paging+flags{endconf|moderator}"},
+	}
 }
 
 // ---------------------------------------------------------------------------

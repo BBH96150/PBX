@@ -41,6 +41,8 @@ func (h *ConfigurationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		h.handleIVRConf(w, r)
 	case "callcenter.conf":
 		h.handleCallcenterConf(w, r)
+	case "conference.conf":
+		h.handleConferenceConf(w, r)
 	default:
 		// Many modules query for configs that don't exist yet — return
 		// not-found so FS falls through to its bundled defaults.
@@ -73,6 +75,34 @@ func (h *ConfigurationHandler) handleCallcenterConf(w http.ResponseWriter, r *ht
 		slog.Error("callcenter.conf render", "err", err)
 	}
 }
+
+// handleConferenceConf serves a static conference.conf with a "paging" profile
+// tuned for one-way intercom paging (PTT increment 2): narrowband, no MOH, no
+// entry/exit tones, no caller controls. The dialplan drops a page caller into a
+// `…@paging` conference and auto-outcalls members muted, so they only listen.
+func (h *ConfigurationHandler) handleConferenceConf(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+	_, _ = w.Write([]byte(conferenceConfXML))
+}
+
+const conferenceConfXML = `<?xml version="1.0"?>
+<document type="freeswitch/xml">
+  <section name="configuration">
+    <configuration name="conference.conf" description="Audio Conference">
+      <profiles>
+        <profile name="paging">
+          <param name="rate" value="8000"/>
+          <param name="interval" value="20"/>
+          <param name="energy-level" value="0"/>
+          <param name="comfort-noise" value="true"/>
+          <param name="caller-controls" value="none"/>
+          <param name="moh-sound" value="silence"/>
+        </profile>
+      </profiles>
+    </configuration>
+  </section>
+</document>
+`
 
 var ivrConfTmpl = template.Must(template.New("ivrconf").Parse(`<?xml version="1.0"?>
 <document type="freeswitch/xml">
