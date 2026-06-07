@@ -25,6 +25,14 @@ on:
         description: "Type 'yes' to check rtpengine.so in the kamailio image + parse the current config."
         required: false
         default: "no"
+      kamsync:
+        description: "Type 'yes' to ship the repo kamailio.cfg to the box + parse-check it (NO restart)."
+        required: false
+        default: "no"
+      kamrestart:
+        description: "Type 'yes' to restart kamailio (PRODUCTION: briefly drops registrations)."
+        required: false
+        default: "no"
 
 jobs:
   webrtc:
@@ -35,12 +43,51 @@ jobs:
     env:
       DIR: /root/sip-platform
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install SSH key
         run: |
           install -m 700 -d ~/.ssh
           echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync + parse-check kamailio.cfg (no restart)
+        if: ${{ github.event.inputs.kamsync == 'yes' }}
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          set -e
+          echo "--- shipping kamailio.cfg ---"
+          scp -o IdentitiesOnly=yes kamailio/etc/kamailio.cfg "$USER@$HOST:$DIR/kamailio/etc/kamailio.cfg"
+          echo "--- parse-check the NEW config (running kamailio keeps its loaded config; this only validates) ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" 'docker exec sip-platform-kamailio-1 kamailio -c -f /etc/kamailio/kamailio.cfg 2>&1 | tail -12'
+
+      - name: Restart kamailio (production)
+        if: ${{ github.event.inputs.kamrestart == 'yes' }}
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$DIR" <<'EOF'
+          set -u
+          DIR="${1:-/root/sip-platform}"
+          KC=sip-platform-kamailio-1
+          echo "--- restarting kamailio ---"
+          cd "$DIR" && docker compose -p sip-platform restart kamailio 2>&1 | tail -5
+          sleep 4
+          echo "--- kamailio up? ---"
+          docker ps --filter name=kamailio --format '{{.Names}}  {{.Status}}'
+          echo "--- rtpengine module loaded + no startup errors? ---"
+          docker logs --tail 15 "$KC" 2>&1 | grep -iE "rtpengine|error|critical|listening" | head -15 || true
+          echo "--- registrations recovering (count) ---"
+          PG=sip-platform-postgres-1
+          PGUSER=$(docker exec "$PG" printenv POSTGRES_USER 2>/dev/null); PGUSER=${PGUSER:-sip}
+          PGDB=$(docker exec "$PG" printenv POSTGRES_DB 2>/dev/null); PGDB=${PGDB:-sipplatform}
+          docker exec "$PG" psql -U "$PGUSER" -d "$PGDB" -tAc "SELECT count(*) FROM location;" 2>&1 || true
+          echo "--- done ---"
+          EOF
 
       - name: Ops
         env:
