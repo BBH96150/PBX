@@ -185,6 +185,7 @@ func main() {
 		SIPDomainSuffix:      cfg.SIPDomainSuffix,
 		VoicemailStorageRoot: cfg.VoicemailStorageRoot,
 		RecordingStorageRoot: cfg.RecordingStorageRoot,
+		SIPRoutingTarget:     cfg.KamailioSIPTarget,
 	})
 	if err != nil {
 		slog.Error("portal init", "err", err)

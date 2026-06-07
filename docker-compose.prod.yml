@@ -34,9 +34,12 @@ services:
   control-plane:
     volumes:
       - freeswitch_storage:/var/lib/freeswitch/storage:ro
-      # Call recording playback: read-only access to FS's recordings dir so the
-      # portal can stream/download/delete recordings from the CDR viewer.
-      - freeswitch_recordings:/var/lib/freeswitch/recordings:ro
+      # Call recording playback + paging broadcast. Read recordings for the CDR
+      # viewer, and WRITE recorded-page (voice-blast) WAVs under <root>/blasts/
+      # which FreeSWITCH then plays to paging-group members. Same volume + same
+      # mount path on both containers, so the path the control-plane writes is
+      # exactly the path FS plays back. (Was :ro; now rw for blast writes.)
+      - freeswitch_recordings:/var/lib/freeswitch/recordings
 
 volumes:
   freeswitch_storage:

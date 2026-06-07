@@ -1,0 +1,19 @@
+{
+  "name": "Paging Broadcast",
+  "short_name": "Paging",
+  "description": "Turn this device into a paging broadcaster.",
+  "start_url": "/admin/broadcast",
+  "scope": "/admin/broadcast",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#1f6feb",
+  "icons": [
+    {
+      "src": "/admin/static/broadcast-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

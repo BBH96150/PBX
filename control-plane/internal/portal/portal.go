@@ -33,7 +33,7 @@ import (
 //go:embed templates/*.html
 var tmplFS embed.FS
 
-//go:embed static/app.css
+//go:embed static/app.css static/broadcast.js static/broadcast.manifest.webmanifest static/broadcast.sw.js static/broadcast-icon.svg
 var staticFS embed.FS
 
 const cookieName = "sip_admin_token"
@@ -65,6 +65,9 @@ type Server struct {
 	vmStorageRoot string
 	// Call recordings: root under which CDR recording_path values must resolve.
 	recordingRoot string
+	// sipRoutingTarget: Kamailio host:port used as fs_path for portal-originated
+	// member calls (paging broadcast). Empty disables broadcast.
+	sipRoutingTarget string
 	// Secure controls cookie Secure flag — set true behind HTTPS.
 	Secure bool
 }
@@ -105,6 +108,10 @@ type Options struct {
 	VoicemailStorageRoot string
 	// Call recordings root. Empty disables recording streaming.
 	RecordingStorageRoot string
+	// SIPRoutingTarget is the internal host:port (Kamailio) used as fs_path
+	// when the portal originates calls straight to a member's registration —
+	// e.g. the paging broadcast (recorded page). Empty disables broadcast.
+	SIPRoutingTarget string
 }
 
 func New(s *store.Store, opts Options) (*Server, error) {
@@ -132,6 +139,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		sipDomainSuffix:    strings.TrimPrefix(opts.SIPDomainSuffix, "."),
 		vmStorageRoot:      opts.VoicemailStorageRoot,
 		recordingRoot:      opts.RecordingStorageRoot,
+		sipRoutingTarget:   opts.SIPRoutingTarget,
 		// Auto-detect cookie Secure flag from PortalBaseURL — when we're
 		// served behind https://, set the flag so browsers refuse to
 		// send the session cookie over plaintext.
@@ -174,6 +182,32 @@ func (s *Server) Router() http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(b)
 	})
+
+	// Broadcast PWA assets (public, non-sensitive: JS/manifest/icon/service
+	// worker). Served unauthenticated so install + the service worker fetch
+	// don't bounce through the login redirect. The page itself (/broadcast)
+	// and the upload endpoint stay behind auth.
+	servePortalStatic := func(path, file, ctype string, extra map[string]string) {
+		r.Get(path, func(w http.ResponseWriter, _ *http.Request) {
+			b, err := staticFS.ReadFile(file)
+			if err != nil {
+				http.Error(w, "not found", 404)
+				return
+			}
+			w.Header().Set("Content-Type", ctype)
+			w.Header().Set("Cache-Control", "no-cache")
+			for k, v := range extra {
+				w.Header().Set(k, v)
+			}
+			_, _ = w.Write(b)
+		})
+	}
+	servePortalStatic("/static/broadcast.js", "static/broadcast.js", "application/javascript; charset=utf-8", nil)
+	servePortalStatic("/static/broadcast-icon.svg", "static/broadcast-icon.svg", "image/svg+xml", nil)
+	servePortalStatic("/broadcast.manifest.webmanifest", "static/broadcast.manifest.webmanifest", "application/manifest+json", nil)
+	// The service worker is served at the app root so its default scope covers
+	// /admin/broadcast; Service-Worker-Allowed widens it to the /admin base.
+	servePortalStatic("/broadcast.sw.js", "static/broadcast.sw.js", "application/javascript; charset=utf-8", map[string]string{"Service-Worker-Allowed": "/admin/"})
 
 	r.Get("/login", s.handleLogin)
 	r.Post("/login", s.handleLoginPost)
@@ -352,6 +386,10 @@ func (s *Server) Router() http.Handler {
 		r.Get("/softphone", s.softphoneGet)
 		r.Post("/softphone/credentials", s.softphoneCredentialsPost)
 
+		// Paging broadcast PWA (recorded "voice blast" to a paging group).
+		r.Get("/broadcast", s.broadcastConsole)
+		r.Post("/broadcast/send", s.broadcastSend)
+
 		// Phase 5.1: per-tenant carrier trunks (CallCentric, Telnyx, ...).
 		r.Get("/tenants/{tenantID}/trunks", s.trunksList)
 		r.Post("/tenants/{tenantID}/trunks", s.trunkCreate)
@@ -423,7 +461,7 @@ func tokenFromCtx(ctx context.Context) *store.APIToken {
 // selfServicePrefixes are the authed paths a non-admin (member) may reach.
 // Everything else under the authed group is admin-only. Paths are relative to
 // the /admin mount (StripPrefix already removed it).
-var selfServicePrefixes = []string{"/me", "/security", "/softphone", "/switch-tenant", "/verify-email", "/logout"}
+var selfServicePrefixes = []string{"/me", "/security", "/softphone", "/broadcast", "/switch-tenant", "/verify-email", "/logout"}
 
 // adminScopeRequired confines non-admin sessions to the self-service area. A
 // token with "admin" scope (super_admin / tenant_admin) passes through to all
