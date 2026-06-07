@@ -1,0 +1,21 @@
+{
+  "name": "paging-broadcast-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native iOS/Android shell for the Paging Broadcast PWA (Capacitor).",
+  "scripts": {
+    "sync": "cap sync",
+    "add:ios": "cap add ios",
+    "add:android": "cap add android",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.0",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/ios": "^6.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "appId": "com.tendpos.paging",
+  "appName": "Paging",
+  "webDir": "www",
+  "server": {
+    "url": "https://pbx.tendpos.com/admin/broadcast",
+    "cleartext": false,
+    "allowNavigation": ["pbx.tendpos.com"]
+  },
+  "ios": {
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
