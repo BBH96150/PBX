@@ -127,6 +127,12 @@ jobs:
           fscli() { docker exec "$FS" fs_cli -p "$ESLPW" -x "$1" 2>&1; }
 
           if [ "$DISCOVER" = "yes" ]; then
+            echo "===== blast dir shared + writable (control-plane writes, FS reads same path) ====="
+            CP=sip-platform-control-plane-1
+            TF="/var/lib/freeswitch/recordings/blasts/.mounttest"
+            docker exec "$CP" sh -c "mkdir -p /var/lib/freeswitch/recordings/blasts && echo ok > $TF && echo CONTROL_PLANE_WROTE" 2>&1
+            docker exec "$FS" sh -c "cat $TF 2>/dev/null && echo FS_CAN_READ_SAME_PATH || echo FS_CANNOT_READ" 2>&1
+            docker exec "$CP" rm -f "$TF" 2>/dev/null || true
             echo "===== mod_conference present / loaded? ====="
             fscli "module_exists mod_conference"
             echo "===== conference command ====="; fscli "conference list" 2>&1 | head -3
