@@ -53,15 +53,12 @@ services:
   rtpengine:
     image: drachtio/rtpengine:latest
     restart: unless-stopped
-    entrypoint: ["rtpengine"]
+    # rtpengine rejects 0.0.0.0 as an interface; bind the container's own IP and
+    # advertise the public IP for ICE/SDP. $$ escapes $ so Compose passes the
+    # shell substitution through to the container.
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - "--interface=0.0.0.0!${MEDIA_PUBLIC_IP:-5.78.207.2}"
-      - "--listen-ng=0.0.0.0:22222"
-      - "--port-min=30000"
-      - "--port-max=30100"
-      - "--log-level=5"
-      - "--log-stderr"
-      - "--foreground"
+      - 'exec rtpengine --interface=$$(hostname -i)!${MEDIA_PUBLIC_IP:-5.78.207.2} --listen-ng=0.0.0.0:22222 --port-min=30000 --port-max=30100 --log-level=5 --log-stderr --foreground'
     ports:
       - "30000-30100:30000-30100/udp"
 
