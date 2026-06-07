@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<!--
+  Static conference profiles. Kept as a file (not served via xml_curl) so
+  mod_conference loads its config at FS boot even when the control-plane is not
+  yet reachable — otherwise the configuration binding fetch fails and the module
+  aborts loading, breaking conference paging (PTT). These profiles are identical
+  for every tenant, so there is nothing dynamic to serve.
+
+    paging  — one-way intercom paging: narrowband, no MOH/tones/controls.
+    default — a sane general conference profile (some tooling expects it).
+-->
+<configuration name="conference.conf" description="Audio Conference">
+  <profiles>
+    <profile name="paging">
+      <param name="rate" value="8000"/>
+      <param name="interval" value="20"/>
+      <param name="energy-level" value="0"/>
+      <param name="comfort-noise" value="true"/>
+      <param name="caller-controls" value="none"/>
+      <param name="moh-sound" value="silence"/>
+    </profile>
+
+    <profile name="default">
+      <param name="rate" value="8000"/>
+      <param name="interval" value="20"/>
+      <param name="energy-level" value="100"/>
+      <param name="comfort-noise" value="true"/>
+      <param name="caller-controls" value="default"/>
+    </profile>
+  </profiles>
+</configuration>

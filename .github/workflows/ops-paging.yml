@@ -1,18 +1,22 @@
 name: Ops · paging validate
 
-# Paging/PTT validation over the deploy SSH key.
-#  - discover (read-only): reloadxml, list paging-relevant FS apps (mod_esf /
-#    mod_conference), confirm the `paging` conference profile instantiates, and
-#    count current registrations in the Kamailio location table.
-#  - page (optional): originate a synthetic caller that dials a paging code in a
-#    tenant, so the full server path (dialplan -> conference -> muted member
-#    auto-outcall) actually runs. Form: "<sip_domain>/<page_code>", e.g.
-#    "acme.sip.local/800". Leaves no lasting state (test conf is torn down).
+# Paging/PTT operations over the deploy SSH key.
+#  - setup (one-time / on conf change): ship the static conference.conf.xml to
+#    the box's mounted FS conf dir, ensure modules.conf loads mod_conference,
+#    then reloadxml + load mod_conference (non-disruptive: no FS restart, no
+#    dropped calls). Makes conference paging work and survive FS restarts.
+#  - discover (read-only): FS module/app state + registration count.
+#  - page (optional): originate a synthetic caller dialing a page code so the
+#    full server path runs. Form: "<sip_domain>/<page_code>".
 on:
   workflow_dispatch:
     inputs:
+      setup:
+        description: "Type 'yes' to install conference.conf + load mod_conference."
+        required: false
+        default: "no"
       discover:
-        description: "Type 'yes' for read-only discovery (apps, profile, regs)."
+        description: "Type 'yes' for read-only discovery."
         required: false
         default: "no"
       page:
@@ -26,7 +30,11 @@ jobs:
     concurrency:
       group: deploy-hetzner
       cancel-in-progress: false
+    env:
+      CONFDIR: /root/sip-platform/freeswitch/conf
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install SSH key
         run: |
           install -m 700 -d ~/.ssh
@@ -34,7 +42,45 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Paging validate
+      - name: Setup conference paging
+        if: ${{ github.event.inputs.setup == 'yes' }}
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          set -e
+          echo "--- confirming box conf dir exists ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "test -d '$CONFDIR/autoload_configs' && echo ok || (echo 'MISSING $CONFDIR/autoload_configs'; exit 1)"
+          echo "--- shipping conference.conf.xml ---"
+          scp -o IdentitiesOnly=yes \
+            freeswitch/conf/autoload_configs/conference.conf.xml \
+            "$USER@$HOST:$CONFDIR/autoload_configs/conference.conf.xml"
+          echo "--- ensuring modules.conf loads mod_conference + reloading ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" CONFDIR="$CONFDIR" bash -se <<'EOF'
+          set -u
+          FS=sip-platform-freeswitch-1
+          MODS="$CONFDIR/autoload_configs/modules.conf.xml"
+          if ! grep -q 'mod_conference' "$MODS"; then
+            echo "mod_conference NOT in modules.conf — inserting after mod_esf"
+            sed -i 's#\(<load module="mod_esf"/>\)#\1\n    <load module="mod_conference"/>#' "$MODS"
+            grep -n 'mod_conference\|mod_esf' "$MODS" || true
+          else
+            echo "mod_conference already listed in modules.conf"
+          fi
+          ESLPW=$(docker exec sip-platform-control-plane-1 printenv ESL_PASSWORD 2>/dev/null); ESLPW=${ESLPW:-ClueCon}
+          fscli() { docker exec "$FS" fs_cli -p "$ESLPW" -x "$1" 2>&1; }
+          echo "--- reloadxml ---"; fscli "reloadxml"
+          echo "--- load mod_conference (idempotent) ---"; fscli "load mod_conference"
+          echo "--- verify: conference profile 'paging' usable ---"
+          fscli "originate {ignore_early_media=true,origination_caller_id_number=setupcheck}loopback/9195/default &conference(setup_paging@paging)" >/dev/null 2>&1 || true
+          sleep 2
+          fscli "conference list"
+          fscli "conference setup_paging@paging hup all" >/dev/null 2>&1 || true
+          echo "--- done setup ---"
+          EOF
+
+      - name: Diagnostics
+        if: ${{ github.event.inputs.discover == 'yes' || github.event.inputs.page != '' }}
         env:
           HOST: ${{ secrets.CI_DEPLOY_HOST }}
           USER: ${{ secrets.CI_DEPLOY_USER }}
@@ -47,52 +93,28 @@ jobs:
           PAGE="${2:-}"
           FS=sip-platform-freeswitch-1
           PG=sip-platform-postgres-1
-          ESLPW=$(docker exec sip-platform-control-plane-1 printenv ESL_PASSWORD 2>/dev/null)
-          ESLPW=${ESLPW:-ClueCon}
+          ESLPW=$(docker exec sip-platform-control-plane-1 printenv ESL_PASSWORD 2>/dev/null); ESLPW=${ESLPW:-ClueCon}
           fscli() { docker exec "$FS" fs_cli -p "$ESLPW" -x "$1" 2>&1; }
 
           if [ "$DISCOVER" = "yes" ]; then
-            echo "===== reloadxml ====="
-            fscli "reloadxml"
-            echo "===== mod_conference present? ====="
+            echo "===== mod_conference present / loaded? ====="
             fscli "module_exists mod_conference"
-            echo "--- try load mod_conference (error = .so not in image) ---"
-            fscli "load mod_conference"
-            echo "===== mod_esf present? ====="
-            fscli "module_exists mod_esf"
-            echo "===== loaded modules matching conf/esf/page ====="
-            fscli "show modules" | grep -iE 'conf|esf|page' || echo "(none)"
-            echo "===== applications: esf / page / multicast ====="
-            fscli "show applications" | grep -iE 'esf|page|multicast|conference' || echo "(none matched)"
-            echo "===== api commands: esf / page ====="
-            fscli "show api" | grep -iE 'esf|page|conference' || echo "(none matched)"
-            echo "===== conference command available now? ====="
-            fscli "conference list" 2>&1 | head -3
-            echo "===== registrations in Kamailio location (count only, no PII) ====="
+            echo "===== conference command ====="; fscli "conference list" 2>&1 | head -3
+            echo "===== esf app ====="; fscli "show applications" | grep -iE 'esf_page' || echo "(none)"
+            echo "===== registrations (count only) ====="
             PGUSER=$(docker exec "$PG" printenv POSTGRES_USER 2>/dev/null); PGUSER=${PGUSER:-postgres}
             PGDB=$(docker exec "$PG" printenv POSTGRES_DB 2>/dev/null); PGDB=${PGDB:-sip_platform}
-            docker exec "$PG" psql -U "$PGUSER" -d "$PGDB" -tAc \
-              "SELECT count(*) AS registrations FROM location;" 2>&1 \
-              || echo "(location query failed)"
+            docker exec "$PG" psql -U "$PGUSER" -d "$PGDB" -tAc "SELECT count(*) FROM location;" 2>&1 || echo "(query failed)"
           fi
 
           if [ -n "$PAGE" ]; then
-            DOMAIN="${PAGE%%/*}"
-            CODE="${PAGE##*/}"
+            DOMAIN="${PAGE%%/*}"; CODE="${PAGE##*/}"
             echo "===== live page test: dial $CODE in $DOMAIN ====="
-            # Synthesize an internal caller in the tenant domain dialing the page
-            # code, so the xml_curl dialplan resolves the paging group exactly as
-            # a real phone would. sip_h header carries the tenant domain.
             fscli "originate {ignore_early_media=true,sip_invite_domain=$DOMAIN,origination_caller_id_number=9000,origination_caller_id_name=PagingTest}loopback/$CODE/default &park()" >/dev/null 2>&1 || true
             sleep 4
-            echo "--- active conferences ---"
-            fscli "conference list"
-            echo "--- active channels (json, first 1500 chars) ---"
-            fscli "show channels as json" | head -c 1500
-            echo
-            echo "--- tearing down test ---"
+            echo "--- active conferences ---"; fscli "conference list"
+            echo "--- channels (json, 1500c) ---"; fscli "show channels as json" | head -c 1500; echo
             fscli "hupall NORMAL_CLEARING origination_caller_id_number 9000" >/dev/null 2>&1 || true
-            fscli "conference paging_* hup all" >/dev/null 2>&1 || true
           fi
           echo "===== done ====="
           EOF
