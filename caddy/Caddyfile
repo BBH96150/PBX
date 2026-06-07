@@ -23,14 +23,24 @@
 	# Compress on the wire — safe defaults.
 	encode zstd gzip
 
-	# Send everything to the control-plane container.
-	reverse_proxy control-plane:8080 {
-		# Forward the original Host so the app's URL-generation logic
-		# (PORTAL_BASE_URL) stays consistent with what the user typed.
-		header_up Host {host}
-		header_up X-Real-IP {remote_host}
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto https
+	# SIP-over-WebSocket for browser softphone / live paging (Phase 2). A
+	# secure-context browser can only open wss://, but Kamailio listens plain
+	# ws on :5066 — terminate TLS here and proxy the upgrade to Kamailio.
+	# reverse_proxy passes WebSocket upgrades through transparently.
+	handle /ws* {
+		reverse_proxy kamailio:5066
+	}
+
+	# Everything else → the control-plane container.
+	handle {
+		reverse_proxy control-plane:8080 {
+			# Forward the original Host so the app's URL-generation logic
+			# (PORTAL_BASE_URL) stays consistent with what the user typed.
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto https
+		}
 	}
 
 	# Tighter rate-limit on auth-ish paths would belong here once we add

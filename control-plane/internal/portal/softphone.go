@@ -71,13 +71,15 @@ func (s *Server) softphoneCredentialsPost(w http.ResponseWriter, r *http.Request
 }
 
 // deriveWebSocketURL turns the portal HTTP base URL into the WS URL the
-// browser uses to reach Kamailio. The control-plane and Kamailio are
-// independent processes; in OrbStack dev they're both reachable from the
-// host on different ports. Here we just swap scheme and use the same host
-// at Kamailio's documented WS port (5066).
+// browser uses to reach Kamailio's SIP-over-WebSocket listener.
 //
-// In production this would come from config (KAMAILIO_WS_URL env or similar).
-// For now we derive it; the operator can override via env later if needed.
+// Production (HTTPS): a browser in a secure context can only open wss://, but
+// Kamailio listens plain ws on :5066. So we route through Caddy, which
+// terminates TLS on 443 and reverse-proxies the `/ws` path to kamailio:5066
+// (see caddy/Caddyfile). The browser connects to wss://<host>/ws — no extra
+// port, reusing the portal's Let's Encrypt cert.
+//
+// Dev (HTTP): connect straight to Kamailio's :5066 (OrbStack maps it to host).
 func deriveWebSocketURL(portalBaseURL string) string {
 	if portalBaseURL == "" {
 		return "ws://127.0.0.1:5066"
@@ -85,7 +87,7 @@ func deriveWebSocketURL(portalBaseURL string) string {
 	if strings.HasPrefix(portalBaseURL, "https://") {
 		host := strings.TrimPrefix(portalBaseURL, "https://")
 		host = stripPort(host)
-		return "wss://" + host + ":5066"
+		return "wss://" + host + "/ws"
 	}
 	host := strings.TrimPrefix(portalBaseURL, "http://")
 	host = stripPort(host)

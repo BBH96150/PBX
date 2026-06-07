@@ -33,6 +33,14 @@ on:
         description: "Type 'yes' to restart kamailio (PRODUCTION: briefly drops registrations)."
         required: false
         default: "no"
+      caddyshow:
+        description: "Type 'yes' to print the box's current Caddyfile (read-only, to check divergence)."
+        required: false
+        default: "no"
+      caddydeploy:
+        description: "Type 'yes' to ship the repo Caddyfile + validate + graceful reload."
+        required: false
+        default: "no"
 
 jobs:
   webrtc:
@@ -101,6 +109,29 @@ jobs:
           docker exec "$PG" psql -U "$PGUSER" -d "$PGDB" -tAc "SELECT count(*) FROM location;" 2>&1 || true
           echo "--- done ---"
           EOF
+
+      - name: Show box Caddyfile
+        if: ${{ github.event.inputs.caddyshow == 'yes' }}
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "cat $DIR/caddy/Caddyfile"
+
+      - name: Deploy + reload Caddy
+        if: ${{ github.event.inputs.caddydeploy == 'yes' }}
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+        run: |
+          set -e
+          echo "--- backup + ship Caddyfile ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" "cp $DIR/caddy/Caddyfile $DIR/caddy/Caddyfile.bak"
+          scp -o IdentitiesOnly=yes caddy/Caddyfile "$USER@$HOST:$DIR/caddy/Caddyfile"
+          echo "--- validate (does not affect running Caddy) ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" 'docker exec sip-platform-caddy-1 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -8'
+          echo "--- graceful reload (zero-downtime) ---"
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" 'docker exec sip-platform-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -5 && echo RELOADED'
 
       - name: Ops
         env:
