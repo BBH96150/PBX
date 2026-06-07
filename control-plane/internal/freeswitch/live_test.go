@@ -37,6 +37,24 @@ func TestParseActiveCalls(t *testing.T) {
 	}
 }
 
+func TestDomainOf(t *testing.T) {
+	cases := []struct {
+		row  map[string]any
+		want string
+	}{
+		{map[string]any{"presence_id": "101@acme.sip.example.com"}, "acme.sip.example.com"},
+		{map[string]any{"sip_from_host": "carrier.example.net"}, "carrier.example.net"},
+		{map[string]any{"sip_to_host": "to.example.org"}, "to.example.org"},
+		{map[string]any{}, ""},
+		{map[string]any{"presence_id": ""}, ""},
+	}
+	for _, c := range cases {
+		if got := domainOf(c.row); got != c.want {
+			t.Errorf("domainOf(%v)=%q want %q", c.row, got, c.want)
+		}
+	}
+}
+
 func TestParseActiveCallsEmpty(t *testing.T) {
 	for _, body := range []string{`{"row_count":0}`, ``, `not json`} {
 		if got := parseActiveCalls(body); got != nil {
