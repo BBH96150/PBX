@@ -54,19 +54,26 @@ jobs:
           if [ "$DISCOVER" = "yes" ]; then
             echo "===== reloadxml ====="
             fscli "reloadxml"
-            echo "===== paging-relevant applications (esf / conference / page / multicast) ====="
-            fscli "show applications" | grep -iE 'esf|conference|page|multicast' || echo "(none matched)"
-            echo "===== mod_esf loaded? ====="
+            echo "===== mod_conference present? ====="
+            fscli "module_exists mod_conference"
+            echo "--- try load mod_conference (error = .so not in image) ---"
+            fscli "load mod_conference"
+            echo "===== mod_esf present? ====="
             fscli "module_exists mod_esf"
-            echo "===== conference 'paging' profile smoke (create + list + teardown) ====="
-            fscli "originate {ignore_early_media=true,origination_caller_id_number=diag}loopback/9195/default &conference(diag_paging@paging)" >/dev/null 2>&1 || true
-            sleep 2
-            fscli "conference list"
-            fscli "conference diag_paging@paging hup all" >/dev/null 2>&1 || true
+            echo "===== loaded modules matching conf/esf/page ====="
+            fscli "show modules" | grep -iE 'conf|esf|page' || echo "(none)"
+            echo "===== applications: esf / page / multicast ====="
+            fscli "show applications" | grep -iE 'esf|page|multicast|conference' || echo "(none matched)"
+            echo "===== api commands: esf / page ====="
+            fscli "show api" | grep -iE 'esf|page|conference' || echo "(none matched)"
+            echo "===== conference command available now? ====="
+            fscli "conference list" 2>&1 | head -3
             echo "===== registrations in Kamailio location (count only, no PII) ====="
-            docker exec "$PG" psql -U postgres -d sip_platform -tAc \
+            PGUSER=$(docker exec "$PG" printenv POSTGRES_USER 2>/dev/null); PGUSER=${PGUSER:-postgres}
+            PGDB=$(docker exec "$PG" printenv POSTGRES_DB 2>/dev/null); PGDB=${PGDB:-sip_platform}
+            docker exec "$PG" psql -U "$PGUSER" -d "$PGDB" -tAc \
               "SELECT count(*) AS registrations FROM location;" 2>&1 \
-              || echo "(location query failed; check DB name/user)"
+              || echo "(location query failed)"
           fi
 
           if [ -n "$PAGE" ]; then
