@@ -1,0 +1,113 @@
+{{define "paging_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Paging / PTT</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>Paging groups</strong> let one person talk to many at once — overhead intercom or push-to-talk. Each group has a delivery <em>mode</em>:</p>
+  <ul style="margin:0.4rem 0 0">
+    <li><strong>Conference page</strong> — dial the group's extension; members auto-answer into a one-way page (works on any registered phone or softphone).</li>
+    <li><strong>Multicast</strong> — desk phones listen on a multicast address pushed via provisioning (LAN only; lowest latency).</li>
+    <li><strong>Native PTT</strong> — hold-to-talk channel for the native app (half-duplex walkie-talkie).</li>
+  </ul>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Groups <span class="muted">({{len .Groups}})</span></h2>
+  {{if .Groups}}
+  <table>
+    <thead><tr><th>Name</th><th>Page code</th><th>Mode</th><th>Members</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {{range .Groups}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td>{{if .Extension}}<code>{{.Extension}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="muted">{{if eq .Mode "fs_conference"}}Conference page{{else if eq .Mode "multicast"}}Multicast{{else}}Native PTT{{end}}</td>
+        <td>{{.MemberCount}}</td>
+        <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
+        <td>
+          <a href="/admin/tenants/{{$t.ID}}/paging?group={{.ID}}" class="btn-sm">Manage →</a>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No paging groups yet — create one below.</p>{{end}}
+</section>
+
+{{with .Selected}}
+<section class="card" style="margin-top:1rem">
+  <div class="row">
+    <h2 style="margin:0;border:0;padding:0">{{.Name}} <span class="muted">members</span></h2>
+    <div class="inline" style="margin:0;gap:0.4rem">
+      <form method="post" action="/admin/tenants/{{$t.ID}}/paging/{{.ID}}/toggle" style="margin:0">
+        <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+        <button type="submit" class="secondary btn-sm">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+      </form>
+      <form method="post" action="/admin/tenants/{{$t.ID}}/paging/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Delete paging group “{{.Name}}”? This cannot be undone.')">
+        <button type="submit" class="secondary btn-sm">Delete group</button>
+      </form>
+    </div>
+  </div>
+  <p class="muted" style="margin:0 0 0.5rem">
+    {{if eq .Mode "fs_conference"}}Dial <code>{{.Extension}}</code> to page these members.
+    {{else if eq .Mode "multicast"}}Phones listen on <code>{{.MulticastAddr}}:{{.MulticastPort}}</code> (applied via provisioning).
+    {{else}}Native-app hold-to-talk channel.{{end}}
+  </p>
+  {{if $.Members}}
+  <table>
+    <thead><tr><th>Extension</th><th>Name</th><th></th></tr></thead>
+    <tbody>
+      {{range $.Members}}
+      <tr>
+        <td><code>{{.Extension}}</code></td>
+        <td>{{if .DisplayName}}{{.DisplayName}}{{else}}<span class="muted">{{.SIPUsername}}</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/paging/{{$.Selected.ID}}/members/{{.ID}}/delete" style="margin:0">
+            <button type="submit" class="secondary btn-sm">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No members yet.</p>{{end}}
+
+  {{if $.Addable}}
+  <form method="post" action="/admin/tenants/{{$t.ID}}/paging/{{.ID}}/members" class="inline" style="margin-top:0.6rem">
+    <select name="extension_id" required style="margin:0;min-width:16rem">
+      <option value="">Add an extension…</option>
+      {{range $.Addable}}<option value="{{.ID}}">{{.Extension}}{{if .DisplayName}} — {{.DisplayName}}{{end}}</option>{{end}}
+    </select>
+    <button type="submit">Add member</button>
+  </form>
+  {{else}}<p class="muted" style="margin-top:0.6rem">All extensions are already in this group.</p>{{end}}
+</section>
+{{end}}
+
+<section class="card" style="margin-top:1rem">
+  <h2>New paging group</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/paging" id="paging-new">
+    <label>Name<input name="name" placeholder="e.g. All staff" required></label>
+    <div class="grid-2">
+      <label>Page code <span class="muted">(dialable extension)</span><input name="extension" placeholder="e.g. 800" pattern="[0-9*#]*"></label>
+      <label>Mode
+        <select name="mode" onchange="document.getElementById('mcast-fields').style.display = this.value==='multicast' ? '' : 'none'">
+          <option value="fs_conference">Conference page (any phone)</option>
+          <option value="multicast">Multicast (desk phones, LAN)</option>
+          <option value="native">Native PTT (app)</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid-2" id="mcast-fields" style="display:none">
+      <label>Multicast address<input name="multicast_addr" placeholder="e.g. 224.0.1.116"></label>
+      <label>Multicast port<input name="multicast_port" type="number" placeholder="e.g. 5000" min="1" max="65535"></label>
+    </div>
+    <button type="submit">Create group</button>
+  </form>
+</section>
+{{end}}

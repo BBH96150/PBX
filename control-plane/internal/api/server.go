@@ -139,6 +139,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/ring-groups", s.createRingGroup)
 			r.Get("/ring-groups", s.listRingGroups)
 			r.Get("/queues", s.listQueues)
+			r.Get("/paging-groups", s.listPagingGroups)
 			r.Get("/devices", s.listDevices)
 		})
 	})

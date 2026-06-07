@@ -37,6 +37,7 @@ Public (no auth): `GET /v1/version`, `POST /v1/signup`,
 | `GET /v1/tenants/{id}/dids` | phone numbers |
 | `GET /v1/tenants/{id}/ring-groups` | ring groups |
 | `GET /v1/tenants/{id}/queues` | call queues |
+| `GET /v1/tenants/{id}/paging-groups` | paging / PTT groups (with member counts) |
 | `GET /v1/tenants/{id}/devices` | provisioned devices (provisioning token omitted) |
 | `GET /v1/devices/{mac}` | a provisioned device |
 | `GET /v1/carriers` | available carriers |

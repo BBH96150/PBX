@@ -1,7 +1,7 @@
 {{define "tenant_subnav"}}
 {{$t := .Tenant}}{{$a := .NavActive}}
 {{$numbers := or (eq $a "trunks") (eq $a "dids") (eq $a "outbound") (eq $a "schedules")}}
-{{$msg := or (eq $a "sms") (eq $a "contacts")}}
+{{$msg := or (eq $a "sms") (eq $a "contacts") (eq $a "paging")}}
 {{$admin := or (eq $a "invites") (eq $a "sso") (eq $a "saml") (eq $a "webhooks") (eq $a "audit")}}
 <nav class="subnav">
   <a href="/admin/tenants/{{$t.ID}}"{{if eq $a "overview"}} class="active"{{end}}>Overview</a>
@@ -24,6 +24,7 @@
     <div class="subnav-menu">
       <a href="/admin/tenants/{{$t.ID}}/sms"{{if eq $a "sms"}} class="active"{{end}}>Messages</a>
       <a href="/admin/tenants/{{$t.ID}}/contacts"{{if eq $a "contacts"}} class="active"{{end}}>Directory</a>
+      <a href="/admin/tenants/{{$t.ID}}/paging"{{if eq $a "paging"}} class="active"{{end}}>Paging / PTT</a>
     </div>
   </details>
 
