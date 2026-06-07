@@ -48,13 +48,38 @@ main { padding: 1.25rem 1.25rem 4rem; max-width: 82rem; margin: 0 auto; }
 .row h1 { letter-spacing: -0.02em; }
 
 /* secondary tab/subnav under a page title */
-.subnav { display: flex; flex-wrap: wrap; gap: 0.15rem; margin: 0.6rem 0 0.25rem; }
+.subnav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; margin: 0.6rem 0 0.25rem; }
 .subnav a {
   padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.85rem; font-weight: 500;
   color: var(--pico-muted-color);
 }
 .subnav a:hover { background: var(--pico-secondary-background); color: var(--pico-color); text-decoration: none; }
 .subnav a.active { background: var(--app-accent); color: var(--app-accent-fg); }
+
+/* grouped subnav dropdowns (native <details>; works without JS) */
+.subnav-group { position: relative; }
+.subnav-group > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.85rem; font-weight: 500;
+  color: var(--pico-muted-color);
+}
+.subnav-group > summary::-webkit-details-marker { display: none; }
+.subnav-group > summary::marker { content: ""; }
+.subnav-group > summary:hover { background: var(--pico-secondary-background); color: var(--pico-color); }
+.subnav-group > summary.active { background: var(--app-accent); color: var(--app-accent-fg); }
+.subnav-menu {
+  position: absolute; left: 0; z-index: 30; margin-top: 0.3rem; min-width: 11rem;
+  display: flex; flex-direction: column; gap: 0.1rem;
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-card-border-color); border-radius: var(--app-radius);
+  padding: 0.35rem; box-shadow: 0 6px 18px rgba(0,0,0,0.14);
+}
+.subnav-menu a {
+  padding: 0.32rem 0.7rem; border-radius: var(--app-radius); font-size: 0.85rem;
+  color: var(--pico-color); white-space: nowrap;
+}
+.subnav-menu a:hover { background: var(--pico-secondary-background); text-decoration: none; }
+.subnav-menu a.active { background: var(--app-accent); color: var(--app-accent-fg); }
 
 /* ---------- cards & layout ---------- */
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--app-gap); }
