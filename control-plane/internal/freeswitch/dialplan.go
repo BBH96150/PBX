@@ -699,6 +699,9 @@ func buildPagingActions(info *store.PagingRoutingInfo, sipTarget string) []dialp
 		{App: "set", Data: "x_tenant_id=" + info.Group.TenantID.String()},
 		{App: "set", Data: "x_paging_group_id=" + info.Group.ID.String()},
 		{App: "answer"},
+		// Short "go ahead" tone so the pager knows when to start talking.
+		// Played to the caller only, before they join the conference.
+		{App: "playback", Data: "tone_stream://%(200,0,800)"},
 		{App: "set", Data: "conference_auto_outcall_timeout=30"},
 		// Called members are muted → one-way page (caller talks, members listen).
 		{App: "set", Data: "conference_auto_outcall_flags=mute"},

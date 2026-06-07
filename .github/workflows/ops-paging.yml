@@ -1,0 +1,91 @@
+name: Ops · paging validate
+
+# Paging/PTT validation over the deploy SSH key.
+#  - discover (read-only): reloadxml, list paging-relevant FS apps (mod_esf /
+#    mod_conference), confirm the `paging` conference profile instantiates, and
+#    count current registrations in the Kamailio location table.
+#  - page (optional): originate a synthetic caller that dials a paging code in a
+#    tenant, so the full server path (dialplan -> conference -> muted member
+#    auto-outcall) actually runs. Form: "<sip_domain>/<page_code>", e.g.
+#    "acme.sip.local/800". Leaves no lasting state (test conf is torn down).
+on:
+  workflow_dispatch:
+    inputs:
+      discover:
+        description: "Type 'yes' for read-only discovery (apps, profile, regs)."
+        required: false
+        default: "no"
+      page:
+        description: "Optional live page test: '<sip_domain>/<page_code>'."
+        required: false
+        default: ""
+
+jobs:
+  paging:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-hetzner
+      cancel-in-progress: false
+    steps:
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.CI_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.CI_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Paging validate
+        env:
+          HOST: ${{ secrets.CI_DEPLOY_HOST }}
+          USER: ${{ secrets.CI_DEPLOY_USER }}
+          DISCOVER: ${{ github.event.inputs.discover }}
+          PAGE: ${{ github.event.inputs.page }}
+        run: |
+          ssh -o IdentitiesOnly=yes "$USER@$HOST" bash -se -- "$DISCOVER" "$PAGE" <<'EOF'
+          set -u
+          DISCOVER="${1:-no}"
+          PAGE="${2:-}"
+          FS=sip-platform-freeswitch-1
+          PG=sip-platform-postgres-1
+          ESLPW=$(docker exec sip-platform-control-plane-1 printenv ESL_PASSWORD 2>/dev/null)
+          ESLPW=${ESLPW:-ClueCon}
+          fscli() { docker exec "$FS" fs_cli -p "$ESLPW" -x "$1" 2>&1; }
+
+          if [ "$DISCOVER" = "yes" ]; then
+            echo "===== reloadxml ====="
+            fscli "reloadxml"
+            echo "===== paging-relevant applications (esf / conference / page / multicast) ====="
+            fscli "show applications" | grep -iE 'esf|conference|page|multicast' || echo "(none matched)"
+            echo "===== mod_esf loaded? ====="
+            fscli "module_exists mod_esf"
+            echo "===== conference 'paging' profile smoke (create + list + teardown) ====="
+            fscli "originate {ignore_early_media=true,origination_caller_id_number=diag}loopback/9195/default &conference(diag_paging@paging)" >/dev/null 2>&1 || true
+            sleep 2
+            fscli "conference list"
+            fscli "conference diag_paging@paging hup all" >/dev/null 2>&1 || true
+            echo "===== registrations in Kamailio location (count only, no PII) ====="
+            docker exec "$PG" psql -U postgres -d sip_platform -tAc \
+              "SELECT count(*) AS registrations FROM location;" 2>&1 \
+              || echo "(location query failed; check DB name/user)"
+          fi
+
+          if [ -n "$PAGE" ]; then
+            DOMAIN="${PAGE%%/*}"
+            CODE="${PAGE##*/}"
+            echo "===== live page test: dial $CODE in $DOMAIN ====="
+            # Synthesize an internal caller in the tenant domain dialing the page
+            # code, so the xml_curl dialplan resolves the paging group exactly as
+            # a real phone would. sip_h header carries the tenant domain.
+            fscli "originate {ignore_early_media=true,sip_invite_domain=$DOMAIN,origination_caller_id_number=9000,origination_caller_id_name=PagingTest}loopback/$CODE/default &park()" >/dev/null 2>&1 || true
+            sleep 4
+            echo "--- active conferences ---"
+            fscli "conference list"
+            echo "--- active channels (json, first 1500 chars) ---"
+            fscli "show channels as json" | head -c 1500
+            echo
+            echo "--- tearing down test ---"
+            fscli "hupall NORMAL_CLEARING origination_caller_id_number 9000" >/dev/null 2>&1 || true
+            fscli "conference paging_* hup all" >/dev/null 2>&1 || true
+          fi
+          echo "===== done ====="
+          EOF
