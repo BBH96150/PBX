@@ -41,6 +41,30 @@ services:
       # exactly the path FS plays back. (Was :ro; now rw for blast writes.)
       - freeswitch_recordings:/var/lib/freeswitch/recordings
 
+  # Phase 2 (live WebRTC PTT): RTPEngine bridges browser WebRTC media
+  # (DTLS-SRTP / ICE / rtcp-mux) ↔ plain RTP toward FreeSWITCH, so audio from a
+  # browser actually reaches the media server. Kamailio drives it over the ng
+  # control protocol (rtpengine:22222) and only for WS/WSS legs — desk-phone
+  # (UDP/TCP) calls never touch it. Userspace forwarding (no kernel module).
+  #
+  # On the same Docker network as Kamailio (reachable as `rtpengine`); the RTP
+  # range is published 1:1 so the advertised public IP:port reaches the
+  # container. Set MEDIA_PUBLIC_IP in the box .env to the server's public IP.
+  rtpengine:
+    image: drachtio/rtpengine:latest
+    restart: unless-stopped
+    entrypoint: ["rtpengine"]
+    command:
+      - "--interface=0.0.0.0!${MEDIA_PUBLIC_IP:-5.78.207.2}"
+      - "--listen-ng=0.0.0.0:22222"
+      - "--port-min=30000"
+      - "--port-max=30100"
+      - "--log-level=5"
+      - "--log-stderr"
+      - "--foreground"
+    ports:
+      - "30000-30100:30000-30100/udp"
+
 volumes:
   freeswitch_storage:
   freeswitch_recordings:
