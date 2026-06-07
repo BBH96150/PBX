@@ -16,7 +16,7 @@ import (
 // WebhookDeliverer is the slice of the webhook dispatcher the portal needs (for
 // the per-endpoint "test" button).
 type WebhookDeliverer interface {
-	DeliverOne(ctx context.Context, ep store.WebhookEndpoint, event string, payload map[string]any) error
+	DeliverOne(ctx context.Context, ep store.WebhookEndpoint, event string, payload map[string]any) (int, error)
 }
 
 // webhookEventTypes are the events an endpoint can subscribe to.
@@ -155,7 +155,7 @@ func (s *Server) webhookTest(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, redirect+"?err=Webhook+delivery+not+available", http.StatusSeeOther)
 		return
 	}
-	if err := s.webhooks.DeliverOne(r.Context(), *ep, "test.ping", map[string]any{
+	if _, err := s.webhooks.DeliverOne(r.Context(), *ep, "test.ping", map[string]any{
 		"message": "This is a test event from your PBX.",
 	}); err != nil {
 		http.Redirect(w, r, redirect+"?err=Test+delivery+failed:+"+httpEscape(err.Error()), http.StatusSeeOther)

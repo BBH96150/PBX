@@ -75,7 +75,8 @@ func (d *Dispatcher) Fire(tenantID uuid.UUID, event string, payload map[string]a
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// Long enough to cover the retry backoff schedule below.
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		eps, err := d.store.ListEnabledWebhookEndpointsForEvent(ctx, tenantID, event)
 		if err != nil {
@@ -83,26 +84,61 @@ func (d *Dispatcher) Fire(tenantID uuid.UUID, event string, payload map[string]a
 			return
 		}
 		for _, ep := range eps {
-			status, errMsg := "ok", ""
-			if err := d.DeliverOne(ctx, ep, event, payload); err != nil {
-				status, errMsg = "fail", err.Error()
-				slog.Warn("webhook delivery failed", "url", ep.URL, "event", event, "err", err)
-			}
+			status, errMsg := d.deliverWithRetry(ctx, ep, event, payload)
 			_ = d.store.RecordWebhookDelivery(ctx, ep.ID, status, errMsg)
 		}
 	}()
 }
 
+// retryBackoff is the delay before each attempt (so 3 attempts total).
+var retryBackoff = []time.Duration{0, 5 * time.Second, 30 * time.Second}
+
+// retriable reports whether a delivery failure with the given HTTP status (0 =
+// transport error) is worth retrying: transport errors, 429, and 5xx are
+// transient; other 4xx are permanent.
+func retriable(code int) bool {
+	return code == 0 || code == 429 || code >= 500
+}
+
+// deliverWithRetry attempts delivery up to len(retryBackoff) times, retrying
+// only transient failures (network errors / 429 / 5xx). Returns "ok"/"fail"
+// and the last error message.
+func (d *Dispatcher) deliverWithRetry(ctx context.Context, ep store.WebhookEndpoint, event string, payload map[string]any) (status, errMsg string) {
+	for attempt, wait := range retryBackoff {
+		if wait > 0 {
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return "fail", "canceled before retry"
+			}
+		}
+		code, err := d.DeliverOne(ctx, ep, event, payload)
+		if err == nil {
+			return "ok", ""
+		}
+		errMsg = err.Error()
+		// Permanent (4xx other than 429): don't waste retries.
+		if !retriable(code) {
+			slog.Warn("webhook delivery failed (permanent)", "url", ep.URL, "event", event, "code", code)
+			return "fail", errMsg
+		}
+		slog.Warn("webhook delivery failed", "url", ep.URL, "event", event, "attempt", attempt+1, "err", err)
+	}
+	return "fail", errMsg
+}
+
 // DeliverOne signs and POSTs one event to one endpoint (synchronous). Exported
 // so the portal "test" button can exercise a single endpoint.
-func (d *Dispatcher) DeliverOne(ctx context.Context, ep store.WebhookEndpoint, event string, payload map[string]any) error {
+// DeliverOne returns the HTTP status code (0 on a transport error) and an error
+// for any non-2xx/transport failure.
+func (d *Dispatcher) DeliverOne(ctx context.Context, ep store.WebhookEndpoint, event string, payload map[string]any) (int, error) {
 	body, err := json.Marshal(map[string]any{
 		"event":   event,
 		"sent_at": time.Now().UTC().Format(time.RFC3339),
 		"data":    payload,
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	mac := hmac.New(sha256.New, []byte(ep.Secret))
 	mac.Write(body)
@@ -110,7 +146,7 @@ func (d *Dispatcher) DeliverOne(ctx context.Context, ep store.WebhookEndpoint, e
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.URL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "SIP-Platform-Webhook/1")
@@ -120,11 +156,11 @@ func (d *Dispatcher) DeliverOne(ctx context.Context, ep store.WebhookEndpoint, e
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("endpoint returned %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("endpoint returned %d", resp.StatusCode)
 	}
-	return nil
+	return resp.StatusCode, nil
 }

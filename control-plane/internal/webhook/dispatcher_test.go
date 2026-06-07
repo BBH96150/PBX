@@ -2,6 +2,21 @@ package webhook
 
 import "testing"
 
+func TestRetriable(t *testing.T) {
+	retry := []int{0, 429, 500, 502, 503}
+	perm := []int{400, 401, 403, 404, 422}
+	for _, c := range retry {
+		if !retriable(c) {
+			t.Errorf("status %d should be retriable", c)
+		}
+	}
+	for _, c := range perm {
+		if retriable(c) {
+			t.Errorf("status %d should NOT be retriable", c)
+		}
+	}
+}
+
 func TestGuardAddress(t *testing.T) {
 	blocked := []string{
 		"127.0.0.1:443", "localhost:443", // localhost resolves? use literal below
