@@ -87,6 +87,8 @@ func (s *Server) Router() http.Handler {
 	r.Use(s.AuthMiddleware([]string{
 		"/healthz",
 		"/v1/version",
+		"/v1/openapi.yaml", // public API reference
+		"/v1/docs",         // public Swagger UI
 		"/v1/freeswitch/dialplan",
 		"/v1/freeswitch/directory",
 		"/v1/freeswitch/configuration",
@@ -97,6 +99,8 @@ func (s *Server) Router() http.Handler {
 
 	r.Get("/healthz", healthz)
 	r.Get("/v1/version", version)
+	r.Get("/v1/openapi.yaml", s.serveOpenAPISpec)
+	r.Get("/v1/docs", s.serveAPIDocs)
 
 	r.Route("/v1/api-tokens", func(r chi.Router) {
 		r.Post("/", RequireScope("admin", s.createAPIToken))

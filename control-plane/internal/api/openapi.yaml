@@ -1,0 +1,2717 @@
+openapi: 3.0.3
+info:
+  title: SIP Platform Control-Plane API
+  version: "1.0.0"
+  description: |
+    REST API (`/v1`) for the multi-tenant SIP / UCaaS PBX control plane
+    (Go control-plane). This documents the chi router in
+    `control-plane/internal/api/server.go` and its handlers.
+
+    ## Authentication
+
+    Every `/v1` endpoint requires a Bearer token unless explicitly marked
+    public:
+
+    ```
+    Authorization: Bearer sip_<token>
+    ```
+
+    Tokens look like `sip_<48hex>` and are either **tenant-scoped** or
+    platform-wide (super-admin, `tenant_id` = null). A tenant admin can
+    self-issue tenant-scoped keys in the portal, choosing a scope:
+
+    - `read`  — GET endpoints only
+    - `write` — read + create/update/delete
+    - `admin` — full control (token / user / invite management)
+
+    `401` = missing/invalid/expired token. `403` = token lacks the required
+    scope or addresses a different tenant.
+
+    ### Scope per endpoint
+
+    Each operation's description states the **Required scope**. Routes wrapped
+    with `RequireScope("admin"|"write"|...)` enforce that exact minimum.
+    Routes without an explicit `RequireScope` wrapper still require a valid
+    bearer token (any scope) but are not scope-gated beyond authentication —
+    these are noted as **Required scope: authenticated**.
+
+    ### Public endpoints (no auth)
+
+    These bypass the auth middleware (`security: []`):
+
+    - `GET  /v1/version`
+    - `POST /v1/signup`
+    - `POST /v1/invites/accept`
+    - `POST /v1/password-reset/request`
+    - `POST /v1/password-reset/confirm`
+    - The FreeSWITCH `xml_curl` callbacks under `/v1/freeswitch/*`
+      (`dialplan`, `directory`, `configuration`) — these are mounted in a
+      separate handler and authenticated by network/source rather than a
+      bearer token; they are described here for completeness only.
+
+    ## Outbound webhooks
+
+    See the `x-webhook-events` extension at the root of this document and the
+    `Webhooks` tag for the event catalog, payload shapes, and the
+    `X-Webhook-Signature` (HMAC-SHA256) verification scheme.
+
+servers:
+  - url: https://pbx.tendpos.com
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Tenants
+    description: Tenant + SIP domain management.
+  - name: Extensions
+    description: SIP extensions and their feature flags.
+  - name: CDRs
+    description: Call detail records (read-only integration pull).
+  - name: Contacts
+    description: Shared per-tenant directory contacts.
+  - name: Devices
+    description: Provisioned (ZTP) desk phones and their line bindings.
+  - name: DIDs
+    description: Inbound phone numbers and their routing destinations.
+  - name: RingGroups
+    description: Ring groups and their member extensions.
+  - name: Queues
+    description: Call-center queues (mod_callcenter) and their agents.
+  - name: IVRs
+    description: Auto-attendant menus and their digit options.
+  - name: PagingGroups
+    description: Paging / PTT (intercom) groups and rosters.
+  - name: Carriers
+    description: PSTN carriers and per-tenant carrier (trunk) accounts.
+  - name: Voicemail
+    description: Voicemail boxes and message metadata.
+  - name: Invites
+    description: Tenant user invitations.
+  - name: Users
+    description: Portal user creation and password management.
+  - name: ApiTokens
+    description: API token issuance and revocation (admin scope).
+  - name: Auth
+    description: Public auth flows — signup, invite acceptance, password reset.
+  - name: Webhooks
+    description: Outbound webhook event catalog (informational; the platform is the sender).
+  - name: System
+    description: Health and version probes.
+
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      summary: Liveness probe
+      description: Health check. Public (whitelisted from auth).
+      security: []
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /v1/version:
+    get:
+      tags: [System]
+      summary: Service version / phase
+      description: Returns service name and current build phase. Public (no auth).
+      security: []
+      responses:
+        "200":
+          description: Version info.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: control-plane
+                  phase:
+                    type: integer
+                    example: 1
+
+  # ---------------------------------------------------------------------------
+  # API tokens
+  # ---------------------------------------------------------------------------
+  /v1/api-tokens:
+    post:
+      tags: [ApiTokens]
+      summary: Create an API token
+      description: |
+        Mints a new bearer token (`sip_<48hex>`). The plaintext token is
+        returned exactly once in the `token` field. Required scope: **admin**.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPITokenRequest"
+      responses:
+        "201":
+          description: Token created. Plaintext returned once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedAPIToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    get:
+      tags: [ApiTokens]
+      summary: List API tokens
+      description: "Lists tokens (no plaintext, no hash). Required scope: **admin**."
+      responses:
+        "200":
+          description: Tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/APIToken"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/api-tokens/{tokenID}:
+    delete:
+      tags: [ApiTokens]
+      summary: Revoke an API token
+      description: "Revokes a token by id. Required scope: **admin**."
+      parameters:
+        - $ref: "#/components/parameters/TokenID"
+      responses:
+        "204":
+          description: Revoked.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ---------------------------------------------------------------------------
+  # Users
+  # ---------------------------------------------------------------------------
+  /v1/users:
+    post:
+      tags: [Users]
+      summary: Create a portal user
+      description: |
+        Creates a portal login user. Only super-admin tokens may create
+        `super_admin` users. Required scope: **admin**.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/users/{userID}/password:
+    post:
+      tags: [Users]
+      summary: Set a user's password
+      description: "Overwrites a user's password (bcrypt server-side). Required scope: **admin**."
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  format: password
+      responses:
+        "204":
+          description: Password set.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ---------------------------------------------------------------------------
+  # Public auth flows
+  # ---------------------------------------------------------------------------
+  /v1/signup:
+    post:
+      tags: [Auth]
+      summary: Self-serve tenant signup
+      description: |
+        Public. Creates a fresh tenant and its first admin user in one
+        transaction (the user is granted `tenant_admin` membership).
+        Required scope: **public (no auth)**.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: Tenant + user created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    $ref: "#/components/schemas/Tenant"
+                  user:
+                    $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /v1/invites/accept:
+    post:
+      tags: [Auth]
+      summary: Accept an invitation
+      description: |
+        Public. Consumes an invite token and creates/links the user account.
+        Required scope: **public (no auth)**.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInviteRequest"
+      responses:
+        "200":
+          description: Invite accepted; user returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid invite token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Invite already used.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "410":
+          description: Invite expired or revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/password-reset/request:
+    post:
+      tags: [Auth]
+      summary: Request a password reset
+      description: |
+        Public. Always returns 202 (never reveals whether the email exists).
+        Reset email is sent in the background. Required scope: **public (no auth)**.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "202":
+          description: Accepted (opaque).
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /v1/password-reset/confirm:
+    post:
+      tags: [Auth]
+      summary: Confirm a password reset
+      description: |
+        Public. Consumes a reset token and sets a new password.
+        Required scope: **public (no auth)**.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                new_password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Password reset; user returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Token already used.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "410":
+          description: Token expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Invites (tenant-scoped admin)
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/invites:
+    post:
+      tags: [Invites]
+      summary: Create an invitation
+      description: |
+        Invites an email to join the tenant. The plaintext token is returned
+        once (and emailed if SMTP is configured). Required scope: **admin**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInviteRequest"
+      responses:
+        "201":
+          description: Invite created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedInvite"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    get:
+      tags: [Invites]
+      summary: List invitations
+      description: "Lists a tenant's invites (no plaintext token). Required scope: **admin**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Invites.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/invites/{inviteID}:
+    delete:
+      tags: [Invites]
+      summary: Revoke an invitation
+      description: "Revokes a pending invite. Required scope: **admin**."
+      parameters:
+        - $ref: "#/components/parameters/InviteID"
+      responses:
+        "204":
+          description: Revoked.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ---------------------------------------------------------------------------
+  # Tenants + SIP domains
+  # ---------------------------------------------------------------------------
+  /v1/tenants:
+    post:
+      tags: [Tenants]
+      summary: Create a tenant
+      description: "Creates a tenant. Required scope: **authenticated** (no explicit scope wrapper)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, name]
+              properties:
+                slug:
+                  type: string
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Tenant created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [Tenants]
+      summary: List tenants
+      description: "Lists tenants the caller can see. Required scope: **authenticated**."
+      responses:
+        "200":
+          description: Tenants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/tenants/{tenantID}:
+    get:
+      tags: [Tenants]
+      summary: Get a tenant
+      description: "Fetches one tenant by id. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Tenant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/tenants/{tenantID}/sip-domains:
+    post:
+      tags: [Tenants]
+      summary: Create a SIP domain
+      description: "Adds a SIP domain to a tenant. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+                is_primary:
+                  type: boolean
+      responses:
+        "201":
+          description: SIP domain created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SIPDomain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Extensions
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/extensions:
+    post:
+      tags: [Extensions]
+      summary: Create an extension
+      description: |
+        Creates a SIP extension. If `sip_password` is blank a random one is
+        generated; it is returned (in `sip_password`) on create only.
+        Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExtensionRequest"
+      responses:
+        "201":
+          description: Extension created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extension"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [Extensions]
+      summary: List extensions
+      description: "Lists a tenant's active extensions (SIP password omitted). Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Extensions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Extension"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/extensions/{extensionID}/features:
+    patch:
+      tags: [Extensions]
+      summary: Update extension feature flags
+      description: |
+        PATCH-style update of feature flags. Only supplied fields change
+        (nullable booleans distinguish "set false" from "unchanged").
+        Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/ExtensionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateExtensionFeaturesRequest"
+      responses:
+        "200":
+          description: Updated extension.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Extension"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # CDRs
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/cdrs:
+    get:
+      tags: [CDRs]
+      summary: List call detail records
+      description: |
+        Returns a tenant's call records, newest first. Required scope:
+        **authenticated**.
+
+        Note: the `CDR` response struct has no JSON tags, so fields serialize
+        with their Go names (e.g. `ID`, `CallUUID`, `FromURI`).
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+        - name: limit
+          in: query
+          description: Max rows (default 200 in this handler; clamped to 10000).
+          schema:
+            type: integer
+            default: 200
+            maximum: 10000
+        - name: since
+          in: query
+          description: Only calls with started_at >= this RFC3339 timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          description: Only calls with started_at < this RFC3339 timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: direction
+          in: query
+          description: Filter by call direction.
+          schema:
+            type: string
+            enum: [inbound, outbound, internal]
+        - name: q
+          in: query
+          description: Substring match on from/to URI or caller-id num/name.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CDR"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Contacts
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/contacts:
+    get:
+      tags: [Contacts]
+      summary: List contacts
+      description: |
+        Lists directory contacts. Optional `?q=` substring search across
+        name/number/company. Required scope: **authenticated**.
+
+        Note: the `Contact` struct has no JSON tags; fields serialize with
+        their Go names (`ID`, `Name`, `Number`, `Company`, `Notes`).
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+        - name: q
+          in: query
+          description: Case-insensitive substring search.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Contacts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Contacts]
+      summary: Create a contact
+      description: "Adds a directory contact. Required scope: **write**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, number]
+              properties:
+                name:
+                  type: string
+                number:
+                  type: string
+                company:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        "201":
+          description: Contact created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/tenants/{tenantID}/contacts/{contactID}:
+    delete:
+      tags: [Contacts]
+      summary: Delete a contact
+      description: "Removes a directory contact. Required scope: **write**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/ContactID"
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ---------------------------------------------------------------------------
+  # Devices
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/devices:
+    post:
+      tags: [Devices]
+      summary: Provision a device
+      description: |
+        Registers a desk phone for ZTP and (best-effort) pushes its MAC to the
+        vendor RPS. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mac, vendor, model]
+              properties:
+                mac:
+                  type: string
+                vendor:
+                  type: string
+                model:
+                  type: string
+                label:
+                  type: string
+      responses:
+        "201":
+          description: Device created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [Devices]
+      summary: List devices
+      description: |
+        Lists a tenant's devices. The per-device `provisioning_token` is
+        stripped from this bulk listing. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Devices (provisioning_token omitted).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/devices/{mac}:
+    get:
+      tags: [Devices]
+      summary: Get a device
+      description: |
+        Fetches one device by MAC. Unlike the list endpoint, this includes the
+        `provisioning_token`. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/MAC"
+      responses:
+        "200":
+          description: Device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/devices/{mac}/lines:
+    post:
+      tags: [Devices]
+      summary: Bind a line to a device
+      description: |
+        Binds a line key (>=1) to an extension on the device. The extension
+        must belong to the device's tenant. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/MAC"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [line_number, extension_id]
+              properties:
+                line_number:
+                  type: integer
+                  minimum: 1
+                extension_id:
+                  type: string
+                  format: uuid
+                label:
+                  type: string
+      responses:
+        "201":
+          description: Line bound.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceLine"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # DIDs
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/dids:
+    post:
+      tags: [DIDs]
+      summary: Create a DID
+      description: |
+        Adds an inbound phone number and its routing destination. `e164` is
+        normalized server-side (US default region). `destination_kind` must be
+        one of `extension`, `ring_group`, `voicemail`, `ivr`, `queue`.
+        Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDIDRequest"
+      responses:
+        "201":
+          description: DID created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [DIDs]
+      summary: List DIDs
+      description: "Lists a tenant's phone numbers. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: DIDs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Ring groups
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/ring-groups:
+    post:
+      tags: [RingGroups]
+      summary: Create a ring group
+      description: |
+        Creates a ring group. `strategy` defaults to `simultaneous`,
+        `ring_timeout_sec` to 30. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRingGroupRequest"
+      responses:
+        "201":
+          description: Ring group created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RingGroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [RingGroups]
+      summary: List ring groups
+      description: "Lists a tenant's ring groups. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Ring groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RingGroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/ring-groups/{ringGroupID}/members:
+    post:
+      tags: [RingGroups]
+      summary: Add a ring group member
+      description: |
+        Adds an extension to a ring group. The extension must belong to the
+        group's tenant. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/RingGroupID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [extension_id]
+              properties:
+                extension_id:
+                  type: string
+                  format: uuid
+                priority:
+                  type: integer
+                ring_delay_sec:
+                  type: integer
+      responses:
+        "201":
+          description: Member added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RingGroupMember"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Queues
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/queues:
+    post:
+      tags: [Queues]
+      summary: Create a queue
+      description: |
+        Creates a mod_callcenter queue and (best-effort) syncs it to FreeSWITCH
+        via ESL. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQueueRequest"
+      responses:
+        "201":
+          description: Queue created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Queue"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [Queues]
+      summary: List queues
+      description: "Lists a tenant's call queues. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Queues.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Queue"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/queues/{queueID}/agents:
+    post:
+      tags: [Queues]
+      summary: Add a queue agent
+      description: |
+        Adds (or updates) an agent + tier for an extension and (best-effort)
+        syncs to mod_callcenter. The extension must belong to the queue's
+        tenant. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/QueueID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [extension_id]
+              properties:
+                extension_id:
+                  type: string
+                  format: uuid
+                tier_level:
+                  type: integer
+                tier_position:
+                  type: integer
+                wrap_up_time:
+                  type: integer
+      responses:
+        "201":
+          description: Agent added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueAgent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # IVRs
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/ivrs:
+    post:
+      tags: [IVRs]
+      summary: Create an IVR
+      description: "Creates an auto-attendant menu. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIVRRequest"
+      responses:
+        "201":
+          description: IVR created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IVR"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/ivrs/{ivrID}/options:
+    post:
+      tags: [IVRs]
+      summary: Add an IVR option
+      description: |
+        Adds a digit option to a menu. For `action_kind=dial_e164`,
+        `action_data` is normalized server-side. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/IVRID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [digit, action_kind]
+              properties:
+                digit:
+                  type: string
+                label:
+                  type: string
+                action_kind:
+                  type: string
+                action_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                action_data:
+                  type: string
+      responses:
+        "201":
+          description: Option added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IVROption"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Paging groups
+  # ---------------------------------------------------------------------------
+  /v1/tenants/{tenantID}/paging-groups:
+    get:
+      tags: [PagingGroups]
+      summary: List paging groups
+      description: "Lists a tenant's paging/PTT groups (each with member_count). Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Paging groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PagingGroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/tenants/{tenantID}/paging-groups/{groupID}/members:
+    get:
+      tags: [PagingGroups]
+      summary: List paging group members
+      description: |
+        Lists the member extensions (PTT roster) of one paging group. The
+        group must belong to the path tenant. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+        - $ref: "#/components/parameters/GroupID"
+      responses:
+        "200":
+          description: Members.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PagingGroupMember"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such paging group for tenant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Carriers
+  # ---------------------------------------------------------------------------
+  /v1/carriers:
+    get:
+      tags: [Carriers]
+      summary: List carriers
+      description: "Lists available PSTN carriers. Required scope: **authenticated**."
+      responses:
+        "200":
+          description: Carriers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Carrier"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/carriers/{kind}/accounts:
+    post:
+      tags: [Carriers]
+      summary: Create a carrier account
+      description: |
+        Creates a per-tenant trunk (carrier account) under the carrier
+        identified by `kind` (e.g. `callcentric`). `register` defaults to true.
+        Required scope: **authenticated**.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          description: Carrier kind (e.g. callcentric, telnyx).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCarrierAccountRequest"
+      responses:
+        "201":
+          description: Carrier account created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CarrierAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Carrier kind not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Voicemail
+  # ---------------------------------------------------------------------------
+  /v1/extensions/{extensionID}/voicemail:
+    post:
+      tags: [Voicemail]
+      summary: Create a voicemail box
+      description: |
+        Creates a voicemail box for an extension and flips the extension's
+        `voicemail_enabled` flag. `pin` is required. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/ExtensionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pin]
+              properties:
+                pin:
+                  type: string
+                  description: 4-12 digits.
+                email:
+                  type: string
+                  format: email
+                timezone:
+                  type: string
+                max_messages:
+                  type: integer
+                max_msg_duration_sec:
+                  type: integer
+      responses:
+        "201":
+          description: Voicemail box created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoicemailBox"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Extension not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags: [Voicemail]
+      summary: Get a voicemail box
+      description: "Fetches an extension's voicemail box. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/ExtensionID"
+      responses:
+        "200":
+          description: Voicemail box.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoicemailBox"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No voicemail box for extension.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/extensions/{extensionID}/voicemail/messages:
+    get:
+      tags: [Voicemail]
+      summary: List voicemail messages
+      description: |
+        Lists message metadata for an extension's box. The audio path is never
+        serialized. Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/ExtensionID"
+      responses:
+        "200":
+          description: Messages (metadata only).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VoicemailMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No voicemail box for extension.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: sip_<token>
+      description: |
+        Bearer token. Tokens look like `sip_<token>` (e.g. `sip_<48hex>`).
+        Send as `Authorization: Bearer sip_<token>`.
+
+  parameters:
+    TenantID:
+      name: tenantID
+      in: path
+      required: true
+      description: Tenant UUID.
+      schema:
+        type: string
+        format: uuid
+    ExtensionID:
+      name: extensionID
+      in: path
+      required: true
+      description: Extension UUID.
+      schema:
+        type: string
+        format: uuid
+    ContactID:
+      name: contactID
+      in: path
+      required: true
+      description: Contact UUID.
+      schema:
+        type: string
+        format: uuid
+    RingGroupID:
+      name: ringGroupID
+      in: path
+      required: true
+      description: Ring group UUID.
+      schema:
+        type: string
+        format: uuid
+    QueueID:
+      name: queueID
+      in: path
+      required: true
+      description: Queue UUID.
+      schema:
+        type: string
+        format: uuid
+    IVRID:
+      name: ivrID
+      in: path
+      required: true
+      description: IVR UUID.
+      schema:
+        type: string
+        format: uuid
+    GroupID:
+      name: groupID
+      in: path
+      required: true
+      description: Paging group UUID.
+      schema:
+        type: string
+        format: uuid
+    TokenID:
+      name: tokenID
+      in: path
+      required: true
+      description: API token UUID.
+      schema:
+        type: string
+        format: uuid
+    UserID:
+      name: userID
+      in: path
+      required: true
+      description: User UUID.
+      schema:
+        type: string
+        format: uuid
+    InviteID:
+      name: inviteID
+      in: path
+      required: true
+      description: Invite UUID.
+      schema:
+        type: string
+        format: uuid
+    MAC:
+      name: mac
+      in: path
+      required: true
+      description: Device MAC address.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request (bad JSON, missing/invalid fields).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Token lacks the required scope or addresses a different tenant.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        plan:
+          type: string
+        billing_email:
+          type: string
+        billing_phone:
+          type: string
+        alert_email:
+          type: string
+        daily_digest:
+          type: boolean
+        trial_ends_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SIPDomain:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        domain:
+          type: string
+        is_primary:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Extension:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        sip_domain_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        sip_username:
+          type: string
+        sip_password:
+          type: string
+          description: Returned on create only.
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        display_name:
+          type: string
+        voicemail_enabled:
+          type: boolean
+        do_not_disturb:
+          type: boolean
+        cf_immediate:
+          type: string
+        cf_busy:
+          type: string
+        cf_no_answer:
+          type: string
+        recording_enabled:
+          type: boolean
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateExtensionRequest:
+      type: object
+      required: [sip_domain_id, extension]
+      properties:
+        sip_domain_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        sip_username:
+          type: string
+        sip_password:
+          type: string
+        display_name:
+          type: string
+
+    UpdateExtensionFeaturesRequest:
+      type: object
+      description: All fields optional; only supplied fields change.
+      properties:
+        do_not_disturb:
+          type: boolean
+          nullable: true
+        cf_immediate:
+          type: string
+          nullable: true
+        cf_busy:
+          type: string
+          nullable: true
+        cf_no_answer:
+          type: string
+          nullable: true
+        voicemail_enabled:
+          type: boolean
+          nullable: true
+        recording_enabled:
+          type: boolean
+          nullable: true
+
+    CDR:
+      type: object
+      description: |
+        Call detail record. The Go struct has no JSON tags, so fields
+        serialize with their Go field names (PascalCase).
+      properties:
+        ID:
+          type: string
+          format: uuid
+        TenantID:
+          type: string
+          format: uuid
+          nullable: true
+        CallUUID:
+          type: string
+        Direction:
+          type: string
+          enum: [inbound, outbound, internal]
+        FromURI:
+          type: string
+        ToURI:
+          type: string
+        CallerIDNum:
+          type: string
+        CallerIDName:
+          type: string
+        StartedAt:
+          type: string
+          format: date-time
+        AnsweredAt:
+          type: string
+          format: date-time
+          nullable: true
+        EndedAt:
+          type: string
+          format: date-time
+          nullable: true
+        DurationSec:
+          type: integer
+          nullable: true
+        BillableSec:
+          type: integer
+          nullable: true
+        Disposition:
+          type: string
+          nullable: true
+        HangupCause:
+          type: string
+        CarrierID:
+          type: string
+          format: uuid
+          nullable: true
+        RecordingPath:
+          type: string
+        Note:
+          type: string
+        Raw:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    Contact:
+      type: object
+      description: |
+        Directory contact. The Go struct has no JSON tags, so fields
+        serialize with their Go field names (PascalCase).
+      properties:
+        ID:
+          type: string
+          format: uuid
+        Name:
+          type: string
+        Number:
+          type: string
+        Company:
+          type: string
+        Notes:
+          type: string
+
+    Device:
+      type: object
+      properties:
+        mac:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+        vendor:
+          type: string
+        model:
+          type: string
+        firmware:
+          type: string
+        provisioning_token:
+          type: string
+          description: Present on single GET; stripped from list responses.
+        label:
+          type: string
+        last_provisioned_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_provisioned_ip:
+          type: string
+        user_agent:
+          type: string
+        rps_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        rps_last_error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DeviceLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_mac:
+          type: string
+        line_number:
+          type: integer
+        extension_id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        extension:
+          type: string
+        display_name:
+          type: string
+
+    DID:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        carrier_id:
+          type: string
+          format: uuid
+        carrier_account_id:
+          type: string
+          format: uuid
+          nullable: true
+        e164:
+          type: string
+        destination_kind:
+          type: string
+          enum: [extension, ring_group, voicemail, ivr, queue]
+        destination_id:
+          type: string
+          format: uuid
+        cnam:
+          type: string
+        enabled:
+          type: boolean
+        schedule_id:
+          type: string
+          format: uuid
+          nullable: true
+        closed_destination_kind:
+          type: string
+        closed_destination_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateDIDRequest:
+      type: object
+      required: [carrier_id, e164, destination_kind, destination_id]
+      properties:
+        carrier_id:
+          type: string
+          format: uuid
+        carrier_account_id:
+          type: string
+          format: uuid
+          nullable: true
+        e164:
+          type: string
+        destination_kind:
+          type: string
+          enum: [extension, ring_group, voicemail, ivr, queue]
+        destination_id:
+          type: string
+          format: uuid
+        cnam:
+          type: string
+
+    RingGroup:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        name:
+          type: string
+        strategy:
+          type: string
+          enum: [simultaneous, sequential, round_robin, random]
+        ring_timeout_sec:
+          type: integer
+        fallback_kind:
+          type: string
+          enum: [extension, ring_group, voicemail, ivr, hangup]
+        fallback_id:
+          type: string
+          format: uuid
+          nullable: true
+        caller_id_prefix:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateRingGroupRequest:
+      type: object
+      required: [name]
+      properties:
+        extension:
+          type: string
+        name:
+          type: string
+        strategy:
+          type: string
+          enum: [simultaneous, sequential, round_robin, random]
+        ring_timeout_sec:
+          type: integer
+          default: 30
+        fallback_kind:
+          type: string
+          enum: [extension, ring_group, voicemail, ivr, hangup]
+        fallback_id:
+          type: string
+          format: uuid
+          nullable: true
+        caller_id_prefix:
+          type: string
+
+    RingGroupMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ring_group_id:
+          type: string
+          format: uuid
+        extension_id:
+          type: string
+          format: uuid
+        priority:
+          type: integer
+        ring_delay_sec:
+          type: integer
+        enabled:
+          type: boolean
+        sip_username:
+          type: string
+        sip_domain:
+          type: string
+        extension:
+          type: string
+        display_name:
+          type: string
+
+    Queue:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        name:
+          type: string
+        strategy:
+          type: string
+        moh_sound:
+          type: string
+        record_template:
+          type: string
+        time_base_score:
+          type: string
+        max_wait_time:
+          type: integer
+        max_wait_no_agent:
+          type: integer
+        max_wait_no_agent_time_reached:
+          type: integer
+        tier_rules_apply:
+          type: boolean
+        tier_rule_wait_second:
+          type: integer
+        tier_rule_no_agent_no_wait:
+          type: boolean
+        discard_abandoned_after:
+          type: integer
+        abandoned_resume_allowed:
+          type: boolean
+        announce_sound:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateQueueRequest:
+      type: object
+      required: [name]
+      properties:
+        extension:
+          type: string
+        name:
+          type: string
+        strategy:
+          type: string
+          description: Default longest-idle-agent.
+        moh_sound:
+          type: string
+        max_wait_time:
+          type: integer
+
+    QueueAgent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        queue_id:
+          type: string
+          format: uuid
+        extension_id:
+          type: string
+          format: uuid
+        agent_type:
+          type: string
+        tier_level:
+          type: integer
+        tier_position:
+          type: integer
+        max_no_answer:
+          type: integer
+        wrap_up_time:
+          type: integer
+        reject_delay_time:
+          type: integer
+        busy_delay_time:
+          type: integer
+        no_answer_delay_time:
+          type: integer
+        enabled:
+          type: boolean
+        extension:
+          type: string
+        display_name:
+          type: string
+
+    IVR:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        extension:
+          type: string
+        greeting_long:
+          type: string
+        greeting_short:
+          type: string
+        invalid_sound:
+          type: string
+        exit_sound:
+          type: string
+        timeout_ms:
+          type: integer
+        inter_digit_timeout_ms:
+          type: integer
+        max_failures:
+          type: integer
+        max_timeouts:
+          type: integer
+        digit_len:
+          type: integer
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateIVRRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        extension:
+          type: string
+        greeting_long:
+          type: string
+        greeting_short:
+          type: string
+        invalid_sound:
+          type: string
+        exit_sound:
+          type: string
+        timeout_ms:
+          type: integer
+        inter_digit_timeout_ms:
+          type: integer
+        max_failures:
+          type: integer
+        max_timeouts:
+          type: integer
+        digit_len:
+          type: integer
+
+    IVROption:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ivr_id:
+          type: string
+          format: uuid
+        digit:
+          type: string
+        label:
+          type: string
+        action_kind:
+          type: string
+        action_id:
+          type: string
+          format: uuid
+          nullable: true
+        action_data:
+          type: string
+
+    PagingGroup:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [fs_conference, multicast, native]
+        multicast_addr:
+          type: string
+        multicast_port:
+          type: integer
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        member_count:
+          type: integer
+
+    PagingGroupMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        paging_group_id:
+          type: string
+          format: uuid
+        extension_id:
+          type: string
+          format: uuid
+        sip_username:
+          type: string
+        sip_domain:
+          type: string
+        extension:
+          type: string
+        display_name:
+          type: string
+
+    Carrier:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+        sip_proxy_host:
+          type: string
+        sip_proxy_port:
+          type: integer
+        transport:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CarrierAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        carrier_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sip_username:
+          type: string
+        sip_password:
+          type: string
+        auth_realm:
+          type: string
+        proxy_host_override:
+          type: string
+        proxy_port_override:
+          type: integer
+        transport_override:
+          type: string
+        fs_gateway_name:
+          type: string
+        register:
+          type: boolean
+        main_did_e164:
+          type: string
+        enabled:
+          type: boolean
+        carrier_kind:
+          type: string
+        carrier_proxy_host:
+          type: string
+        carrier_transport:
+          type: string
+        carrier_default_auth_realm:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateCarrierAccountRequest:
+      type: object
+      required: [name, sip_username, sip_password, fs_gateway_name]
+      properties:
+        name:
+          type: string
+        sip_username:
+          type: string
+        sip_password:
+          type: string
+        auth_realm:
+          type: string
+        fs_gateway_name:
+          type: string
+        register:
+          type: boolean
+          nullable: true
+          default: true
+        main_did_e164:
+          type: string
+
+    VoicemailBox:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        extension_id:
+          type: string
+          format: uuid
+        pin:
+          type: string
+        email:
+          type: string
+          format: email
+        timezone:
+          type: string
+        max_messages:
+          type: integer
+        max_msg_duration_sec:
+          type: integer
+        greeting_path:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VoicemailMessage:
+      type: object
+      description: Audio path (audio_path) is never serialized.
+      properties:
+        id:
+          type: string
+          format: uuid
+        box_id:
+          type: string
+          format: uuid
+        caller_id_num:
+          type: string
+        caller_id_name:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        duration_sec:
+          type: integer
+        status:
+          type: string
+        played_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for super-admin.
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, tenant_admin, super_admin]
+        status:
+          type: string
+        email_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateUserRequest:
+      type: object
+      required: [email, display_name, password]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Omit for super-admin.
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, tenant_admin, super_admin]
+        password:
+          type: string
+          format: password
+        send_verification:
+          type: boolean
+
+    APIToken:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for super-admin / platform-wide.
+        name:
+          type: string
+        token_prefix:
+          type: string
+        scope:
+          type: string
+          enum: [read, write, admin]
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    IssuedAPIToken:
+      allOf:
+        - $ref: "#/components/schemas/APIToken"
+        - type: object
+          properties:
+            token:
+              type: string
+              description: Plaintext token (sip_<48hex>), shown once on create.
+
+    CreateAPITokenRequest:
+      type: object
+      required: [name]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null/omit for super-admin token.
+        name:
+          type: string
+        scope:
+          type: string
+          enum: [read, write, admin]
+          default: write
+        expires_in:
+          type: string
+          description: Go duration string, e.g. "720h". Optional.
+
+    Invite:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, tenant_admin]
+        token_prefix:
+          type: string
+        invited_by:
+          type: string
+          format: uuid
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        accepted_by:
+          type: string
+          format: uuid
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    IssuedInvite:
+      allOf:
+        - $ref: "#/components/schemas/Invite"
+        - type: object
+          properties:
+            token:
+              type: string
+              description: Plaintext invite token, shown once on create.
+
+    CreateInviteRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, tenant_admin]
+
+    AcceptInviteRequest:
+      type: object
+      required: [token, display_name, password]
+      properties:
+        token:
+          type: string
+        display_name:
+          type: string
+        password:
+          type: string
+          format: password
+
+    SignupRequest:
+      type: object
+      required: [company_name, admin_email, admin_password]
+      properties:
+        company_name:
+          type: string
+        slug:
+          type: string
+          description: Optional; auto-derived from company name if empty.
+        plan:
+          type: string
+          enum: [trial, starter, pro, enterprise]
+          default: trial
+        billing_email:
+          type: string
+          format: email
+        billing_phone:
+          type: string
+        admin_email:
+          type: string
+          format: email
+        admin_password:
+          type: string
+          format: password
+        admin_display_name:
+          type: string
+
+    WebhookEnvelope:
+      type: object
+      description: Common envelope for all outbound webhook deliveries.
+      properties:
+        event:
+          type: string
+          enum: [call.completed, trunk.down, trunk.up, voicemail.new, test.ping]
+        sent_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Event-specific payload; see x-webhook-events.
+
+x-webhook-events:
+  description: |
+    Outbound webhooks are configured per tenant in the portal. Each endpoint
+    has an HTTPS URL, a generated signing secret, and an optional event
+    subscription list (empty = all events). Delivery is best-effort with a 6s
+    timeout; redirects are not followed; only public HTTPS URLs are allowed.
+
+    Each delivery is an HTTP POST with a JSON body:
+      { "event": "<event>", "sent_at": "<RFC3339>", "data": { ... } }
+
+    Headers:
+      - X-Webhook-Event: <event name>
+      - X-Webhook-Id: <endpoint uuid>
+      - X-Webhook-Signature: sha256=<hex>
+          HMAC-SHA256 of the raw request body using the endpoint's signing
+          secret. Verify with constant-time comparison:
+            expected = "sha256=" + hex(hmac_sha256(secret, raw_body))
+  signatureHeader: X-Webhook-Signature
+  algorithm: HMAC-SHA256
+  events:
+    call.completed:
+      summary: A call finished and its CDR was written.
+      payload:
+        type: object
+        properties:
+          call_uuid:
+            type: string
+          direction:
+            type: string
+            enum: [inbound, outbound, internal]
+          from:
+            type: string
+          to:
+            type: string
+          caller_id_num:
+            type: string
+          caller_id_name:
+            type: string
+          started_at:
+            type: string
+            format: date-time
+          duration_sec:
+            type: integer
+          billable_sec:
+            type: integer
+          disposition:
+            type: string
+          hangup_cause:
+            type: string
+    trunk.down:
+      summary: A carrier trunk/gateway transitioned to a down state.
+      payload:
+        type: object
+        properties:
+          trunk:
+            type: string
+          carrier:
+            type: string
+          gateway:
+            type: string
+          prev_state:
+            type: string
+          state:
+            type: string
+    trunk.up:
+      summary: A carrier trunk/gateway recovered.
+      payload:
+        type: object
+        properties:
+          trunk:
+            type: string
+          carrier:
+            type: string
+          gateway:
+            type: string
+          prev_state:
+            type: string
+          state:
+            type: string
+    voicemail.new:
+      summary: A new voicemail message was left.
+      payload:
+        type: object
+        properties:
+          extension_id:
+            type: string
+            format: uuid
+          user:
+            type: string
+          domain:
+            type: string
+          caller_id_num:
+            type: string
+          caller_id_name:
+            type: string
+          duration_sec:
+            type: integer
+    test.ping:
+      summary: Test delivery fired from the portal's "Send test" button.
+      payload:
+        type: object
