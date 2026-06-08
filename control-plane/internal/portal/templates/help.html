@@ -14,7 +14,45 @@
   <a href="/admin/me" class="btn-sm secondary" role="button">← Back to portal</a>
   {{if not .IsIndex}}<a href="/admin/help" class="btn-sm" role="button">📚 All help articles</a>{{end}}
 </div>
-<article class="card kb-prose">
+{{if .IsIndex}}
+<input type="search" id="kb-search" placeholder="🔍 Search help articles…" autocomplete="off"
+       style="width:100%;max-width:52rem;margin-bottom:0.8rem" aria-label="Search help articles">
+{{end}}
+<article class="card kb-prose" id="kb-body">
   {{.Body}}
 </article>
+{{if .IsIndex}}
+<p class="empty" id="kb-noresults" style="display:none">No articles match your search.</p>
+<script>
+(function () {
+  var input = document.getElementById('kb-search');
+  var body = document.getElementById('kb-body');
+  if (!input || !body) return;
+  var items = Array.prototype.slice.call(body.querySelectorAll('li'));
+  var heads = Array.prototype.slice.call(body.querySelectorAll('h2, h3'));
+  var none = document.getElementById('kb-noresults');
+  input.addEventListener('input', function () {
+    var q = input.value.trim().toLowerCase();
+    var anyVisible = false;
+    items.forEach(function (li) {
+      var hit = q === '' || li.textContent.toLowerCase().indexOf(q) !== -1;
+      li.style.display = hit ? '' : 'none';
+      if (hit) anyVisible = true;
+    });
+    // Hide a section heading when all its following items are hidden.
+    heads.forEach(function (h) {
+      var sib = h.nextElementSibling, show = q === '';
+      while (sib && sib.tagName !== 'H2' && sib.tagName !== 'H3') {
+        if (sib.tagName === 'UL' || sib.tagName === 'OL') {
+          if (sib.querySelector('li:not([style*="display: none"])')) show = true;
+        }
+        sib = sib.nextElementSibling;
+      }
+      h.style.display = show ? '' : 'none';
+    });
+    none.style.display = anyVisible ? 'none' : 'block';
+  });
+})();
+</script>
+{{end}}
 {{end}}

@@ -64,3 +64,7 @@ New here? Start with [Welcome: how your phone system is organized](getting-start
 ## Troubleshooting & FAQ
 
 - [Troubleshooting & FAQ](troubleshooting-faq.md)
+
+## Reference
+
+- [Glossary of phone-system terms](glossary.md)
