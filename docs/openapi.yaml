@@ -51,7 +51,7 @@ info:
 
     ## Outbound webhooks
 
-    See the `x-webhooks` extension at the root of this document and the
+    See the `x-webhook-events` extension at the root of this document and the
     `Webhooks` tag for the event catalog, payload shapes, and the
     `X-Webhook-Signature` (HMAC-SHA256) verification scheme.
 
@@ -171,7 +171,7 @@ paths:
     get:
       tags: [ApiTokens]
       summary: List API tokens
-      description: Lists tokens (no plaintext, no hash). Required scope: **admin**.
+      description: "Lists tokens (no plaintext, no hash). Required scope: **admin**."
       responses:
         "200":
           description: Tokens.
@@ -190,7 +190,7 @@ paths:
     delete:
       tags: [ApiTokens]
       summary: Revoke an API token
-      description: Revokes a token by id. Required scope: **admin**.
+      description: "Revokes a token by id. Required scope: **admin**."
       parameters:
         - $ref: "#/components/parameters/TokenID"
       responses:
@@ -237,7 +237,7 @@ paths:
     post:
       tags: [Users]
       summary: Set a user's password
-      description: Overwrites a user's password (bcrypt server-side). Required scope: **admin**.
+      description: "Overwrites a user's password (bcrypt server-side). Required scope: **admin**."
       parameters:
         - $ref: "#/components/parameters/UserID"
       requestBody:
@@ -444,7 +444,7 @@ paths:
     get:
       tags: [Invites]
       summary: List invitations
-      description: Lists a tenant's invites (no plaintext token). Required scope: **admin**.
+      description: "Lists a tenant's invites (no plaintext token). Required scope: **admin**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -465,7 +465,7 @@ paths:
     delete:
       tags: [Invites]
       summary: Revoke an invitation
-      description: Revokes a pending invite. Required scope: **admin**.
+      description: "Revokes a pending invite. Required scope: **admin**."
       parameters:
         - $ref: "#/components/parameters/InviteID"
       responses:
@@ -485,7 +485,7 @@ paths:
     post:
       tags: [Tenants]
       summary: Create a tenant
-      description: Creates a tenant. Required scope: **authenticated** (no explicit scope wrapper).
+      description: "Creates a tenant. Required scope: **authenticated** (no explicit scope wrapper)."
       requestBody:
         required: true
         content:
@@ -512,7 +512,7 @@ paths:
     get:
       tags: [Tenants]
       summary: List tenants
-      description: Lists tenants the caller can see. Required scope: **authenticated**.
+      description: "Lists tenants the caller can see. Required scope: **authenticated**."
       responses:
         "200":
           description: Tenants.
@@ -529,7 +529,7 @@ paths:
     get:
       tags: [Tenants]
       summary: Get a tenant
-      description: Fetches one tenant by id. Required scope: **authenticated**.
+      description: "Fetches one tenant by id. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -550,7 +550,7 @@ paths:
     post:
       tags: [Tenants]
       summary: Create a SIP domain
-      description: Adds a SIP domain to a tenant. Required scope: **authenticated**.
+      description: "Adds a SIP domain to a tenant. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       requestBody:
@@ -610,7 +610,7 @@ paths:
     get:
       tags: [Extensions]
       summary: List extensions
-      description: Lists a tenant's active extensions (SIP password omitted). Required scope: **authenticated**.
+      description: "Lists a tenant's active extensions (SIP password omitted). Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -750,7 +750,7 @@ paths:
     post:
       tags: [Contacts]
       summary: Create a contact
-      description: Adds a directory contact. Required scope: **write**.
+      description: "Adds a directory contact. Required scope: **write**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       requestBody:
@@ -787,7 +787,7 @@ paths:
     delete:
       tags: [Contacts]
       summary: Delete a contact
-      description: Removes a directory contact. Required scope: **write**.
+      description: "Removes a directory contact. Required scope: **write**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
         - $ref: "#/components/parameters/ContactID"
@@ -954,7 +954,7 @@ paths:
     get:
       tags: [DIDs]
       summary: List DIDs
-      description: Lists a tenant's phone numbers. Required scope: **authenticated**.
+      description: "Lists a tenant's phone numbers. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -1003,7 +1003,7 @@ paths:
     get:
       tags: [RingGroups]
       summary: List ring groups
-      description: Lists a tenant's ring groups. Required scope: **authenticated**.
+      description: "Lists a tenant's ring groups. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -1088,7 +1088,7 @@ paths:
     get:
       tags: [Queues]
       summary: List queues
-      description: Lists a tenant's call queues. Required scope: **authenticated**.
+      description: "Lists a tenant's call queues. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -1151,7 +1151,7 @@ paths:
     post:
       tags: [IVRs]
       summary: Create an IVR
-      description: Creates an auto-attendant menu. Required scope: **authenticated**.
+      description: "Creates an auto-attendant menu. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       requestBody:
@@ -1220,7 +1220,7 @@ paths:
     get:
       tags: [PagingGroups]
       summary: List paging groups
-      description: Lists a tenant's paging/PTT groups (each with member_count). Required scope: **authenticated**.
+      description: "Lists a tenant's paging/PTT groups (each with member_count). Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/TenantID"
       responses:
@@ -1274,7 +1274,7 @@ paths:
     get:
       tags: [Carriers]
       summary: List carriers
-      description: Lists available PSTN carriers. Required scope: **authenticated**.
+      description: "Lists available PSTN carriers. Required scope: **authenticated**."
       responses:
         "200":
           description: Carriers.
@@ -1378,7 +1378,7 @@ paths:
     get:
       tags: [Voicemail]
       summary: Get a voicemail box
-      description: Fetches an extension's voicemail box. Required scope: **authenticated**.
+      description: "Fetches an extension's voicemail box. Required scope: **authenticated**."
       parameters:
         - $ref: "#/components/parameters/ExtensionID"
       responses:
@@ -2612,9 +2612,9 @@ components:
           format: date-time
         data:
           type: object
-          description: Event-specific payload; see x-webhooks.
+          description: Event-specific payload; see x-webhook-events.
 
-x-webhooks:
+x-webhook-events:
   description: |
     Outbound webhooks are configured per tenant in the portal. Each endpoint
     has an HTTPS URL, a generated signing secret, and an optional event
