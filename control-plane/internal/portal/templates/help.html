@@ -1,0 +1,20 @@
+{{define "help_content"}}
+<style>
+  .kb-prose { max-width: 52rem; line-height: 1.65; }
+  .kb-prose h1 { margin-top: 0; }
+  .kb-prose h2 { margin-top: 1.6rem; border-top: 1px solid var(--pico-muted-border-color); padding-top: 1rem; }
+  .kb-prose h3 { margin-top: 1.2rem; }
+  .kb-prose code { font-size: 0.88em; }
+  .kb-prose pre { padding: 0.8rem; border-radius: 8px; overflow:auto; }
+  .kb-prose table { display: block; overflow-x: auto; }
+  .kb-prose ul, .kb-prose ol { padding-left: 1.3rem; }
+  .kb-prose blockquote { border-left: 3px solid var(--pico-primary); padding-left: 0.9rem; color: var(--pico-muted-color); }
+</style>
+<div class="row" style="margin-bottom:0.6rem">
+  <a href="/admin/me" class="btn-sm secondary" role="button">← Back to portal</a>
+  {{if not .IsIndex}}<a href="/admin/help" class="btn-sm" role="button">📚 All help articles</a>{{end}}
+</div>
+<article class="card kb-prose">
+  {{.Body}}
+</article>
+{{end}}

@@ -390,6 +390,10 @@ func (s *Server) Router() http.Handler {
 		r.Get("/broadcast", s.broadcastConsole)
 		r.Post("/broadcast/send", s.broadcastSend)
 
+		// In-app Help Center (rendered knowledgebase).
+		r.Get("/help", s.helpIndex)
+		r.Get("/help/{slug}", s.helpArticle)
+
 		// Phase 5.1: per-tenant carrier trunks (CallCentric, Telnyx, ...).
 		r.Get("/tenants/{tenantID}/trunks", s.trunksList)
 		r.Post("/tenants/{tenantID}/trunks", s.trunkCreate)
@@ -461,7 +465,7 @@ func tokenFromCtx(ctx context.Context) *store.APIToken {
 // selfServicePrefixes are the authed paths a non-admin (member) may reach.
 // Everything else under the authed group is admin-only. Paths are relative to
 // the /admin mount (StripPrefix already removed it).
-var selfServicePrefixes = []string{"/me", "/security", "/softphone", "/broadcast", "/switch-tenant", "/verify-email", "/logout"}
+var selfServicePrefixes = []string{"/me", "/security", "/softphone", "/broadcast", "/help", "/switch-tenant", "/verify-email", "/logout"}
 
 // adminScopeRequired confines non-admin sessions to the self-service area. A
 // token with "admin" scope (super_admin / tenant_admin) passes through to all
