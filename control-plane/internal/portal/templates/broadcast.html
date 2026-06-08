@@ -50,6 +50,10 @@
     footer { padding:0.8rem 1.1rem calc(0.8rem + env(safe-area-inset-bottom)); color:var(--muted); font-size:0.75rem; text-align:center; }
     .notice { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.1rem; color:var(--muted); }
     a { color:var(--blue); }
+    .tabs { display:flex; gap:0.4rem; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:0.3rem; }
+    .tab { flex:1; padding:0.6rem; border:none; background:transparent; color:var(--muted); border-radius:9px; font-size:0.95rem; font-weight:600; cursor:pointer; }
+    .tab.active { background:var(--blue); color:#fff; }
+    .recbtn.talking { background:var(--green); animation:none; box-shadow:0 0 0 14px rgba(35,134,54,.25); }
   </style>
 </head>
 <body>
@@ -67,24 +71,51 @@
     {{else if not .Ready}}
       <div class="notice">Broadcasting isn’t enabled on this server yet (FreeSWITCH routing/recordings path not configured).</div>
     {{else}}
+      <div class="tabs">
+        <button id="tab-record" class="tab active">🎙 Record &amp; send</button>
+        <button id="tab-live" class="tab">📡 Live</button>
+      </div>
+
       <div>
         <label for="group">Broadcast to</label>
         <select id="group"></select>
       </div>
 
-      <div class="stage">
-        <div class="timer" id="timer">0:00</div>
-        <div class="meter"><div id="level"></div></div>
-        <button class="recbtn" id="rec">
-          <span class="dot"></span>
-          <span class="rec-label">Record</span>
-        </button>
-        <audio id="player" controls style="display:none"></audio>
+      <!-- Recorded blast -->
+      <div id="mode-record">
+        <div class="stage">
+          <div class="timer" id="timer">0:00</div>
+          <div class="meter"><div id="level"></div></div>
+          <button class="recbtn" id="rec">
+            <span class="dot"></span>
+            <span class="rec-label">Record</span>
+          </button>
+          <audio id="player" controls style="display:none"></audio>
+        </div>
+        <div class="row">
+          <button class="discard" id="discard" disabled>Discard</button>
+          <button class="send" id="send" disabled>📢 Broadcast</button>
+        </div>
       </div>
 
-      <div class="row">
-        <button class="discard" id="discard" disabled>Discard</button>
-        <button class="send" id="send" disabled>📢 Broadcast</button>
+      <!-- Live push-to-talk -->
+      <div id="mode-live" style="display:none">
+        {{if not .LiveReady}}
+          <div class="notice">Live push-to-talk needs an extension assigned to your account (and a configured server). Recorded mode works without one.</div>
+        {{else}}
+          <div id="live-connect">
+            <label for="live-ext">Talk as</label>
+            <select id="live-ext"></select>
+            <button class="send" id="golive" style="width:100%;margin-top:0.6rem">🔌 Go live</button>
+          </div>
+          <div class="stage" id="live-stage" style="display:none">
+            <p class="muted" id="live-hint" style="margin:0 0 1rem">Hold the button and speak. Release to end the page.</p>
+            <button class="recbtn" id="ptt">
+              <span class="rec-label">Hold&nbsp;to&nbsp;Talk</span>
+            </button>
+            <audio id="live-audio" autoplay style="display:none"></audio>
+          </div>
+        {{end}}
       </div>
 
       <div class="status" id="status"></div>
@@ -93,8 +124,16 @@
 
   <footer>Recorded page → played to every group member. <a href="/admin/me">Back to portal</a></footer>
 
-  <script>window.__PAGING_GROUPS__ = {{.GroupsJSON}};</script>
-  {{if and .HasTenant .Ready}}<script src="/admin/static/broadcast.js"></script>{{end}}
+  <script>
+    window.__PAGING_GROUPS__ = {{.GroupsJSON}};
+    window.__EXTS__ = {{.ExtsJSON}};
+    window.__WSURL__ = {{.WSURL | printf "%q"}};
+    window.__LIVE_READY__ = {{if .LiveReady}}true{{else}}false{{end}};
+  </script>
+  {{if and .HasTenant .Ready}}
+  <script src="https://unpkg.com/sip.js@0.21.2/dist/sip.min.js"></script>
+  <script src="/admin/static/broadcast.js"></script>
+  {{end}}
 </body>
 </html>
 {{end}}

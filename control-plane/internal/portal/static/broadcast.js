@@ -214,6 +214,135 @@
 
   fillGroups();
 
+  // ---------------------------------------------------------------------------
+  // Live push-to-talk (SIP.js over wss → page code → conference paging).
+  // Press = INVITE the group's page code; release = hang up. The pager is the
+  // (unmuted) conference moderator; members auto-answer muted and listen.
+  // ---------------------------------------------------------------------------
+  var exts = Array.isArray(window.__EXTS__) ? window.__EXTS__ : [];
+  var wsURL = window.__WSURL__ || '';
+  var L = {
+    tabRecord: document.getElementById('tab-record'),
+    tabLive: document.getElementById('tab-live'),
+    modeRecord: document.getElementById('mode-record'),
+    modeLive: document.getElementById('mode-live'),
+    ext: document.getElementById('live-ext'),
+    golive: document.getElementById('golive'),
+    connect: document.getElementById('live-connect'),
+    stage: document.getElementById('live-stage'),
+    ptt: document.getElementById('ptt'),
+    audio: document.getElementById('live-audio'),
+  };
+  var ua = null, registerer = null, pttSession = null, creds = null, registered = false;
+
+  function showMode(live) {
+    if (!L.tabRecord) return;
+    L.tabRecord.classList.toggle('active', !live);
+    L.tabLive.classList.toggle('active', live);
+    L.modeRecord.style.display = live ? 'none' : '';
+    L.modeLive.style.display = live ? '' : 'none';
+  }
+  if (L.tabRecord) L.tabRecord.addEventListener('click', function () { showMode(false); });
+  if (L.tabLive) L.tabLive.addEventListener('click', function () { showMode(true); });
+
+  if (L.ext) {
+    L.ext.innerHTML = exts.map(function (e) {
+      return '<option value="' + e.id + '">' + escapeHtml(e.extension + (e.display_name ? ' — ' + e.display_name : '')) + '</option>';
+    }).join('');
+  }
+
+  function currentGroup() {
+    var id = els.group ? els.group.value : '';
+    for (var i = 0; i < groups.length; i++) if (groups[i].id === id) return groups[i];
+    return null;
+  }
+
+  async function goLive() {
+    if (!exts.length || typeof SIP === 'undefined') { setStatus('Live mode unavailable.', 'err'); return; }
+    L.golive.disabled = true;
+    setStatus('Issuing credentials…', '');
+    var fd = new FormData(); fd.append('extension_id', L.ext.value);
+    try {
+      var r = await fetch('/admin/softphone/credentials', { method: 'POST', body: fd, credentials: 'same-origin' });
+      if (!r.ok) throw new Error('cred ' + r.status);
+      creds = await r.json();
+    } catch (e) { setStatus('Credential error.', 'err'); L.golive.disabled = false; return; }
+    setStatus('Connecting…', '');
+    try {
+      ua = new SIP.UserAgent({
+        uri: SIP.UserAgent.makeURI('sip:' + creds.username + '@' + creds.domain),
+        authorizationUsername: creds.username,
+        authorizationPassword: creds.password,
+        displayName: creds.display_name || creds.extension,
+        transportOptions: { server: wsURL },
+        sessionDescriptionHandlerFactoryOptions: {
+          peerConnectionConfiguration: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
+        },
+        logBuiltinEnabled: false, logConfiguration: false,
+      });
+      await ua.start();
+      registerer = new SIP.Registerer(ua);
+      registerer.stateChange.addListener(function (st) {
+        if (st === 'Registered' && !registered) {
+          registered = true;
+          L.connect.style.display = 'none';
+          L.stage.style.display = '';
+          setStatus('Live — hold the button to page.', 'ok');
+        }
+      });
+      await registerer.register();
+    } catch (e) { setStatus('Connect failed: ' + e.message, 'err'); L.golive.disabled = false; }
+  }
+  if (L.golive) L.golive.addEventListener('click', goLive);
+
+  function attachLiveAudio(s) {
+    var pc = s.sessionDescriptionHandler && s.sessionDescriptionHandler.peerConnection;
+    if (!pc) return;
+    var ms = new MediaStream();
+    pc.getReceivers().forEach(function (rr) { if (rr.track) ms.addTrack(rr.track); });
+    L.audio.srcObject = ms;
+  }
+
+  async function pttStart() {
+    if (!ua || !registered || pttSession) return;
+    var g = currentGroup();
+    if (!g) { setStatus('Pick a group first.', 'warn'); return; }
+    if (!g.code) { setStatus('“' + g.name + '” has no page code — use Record mode.', 'warn'); return; }
+    L.ptt.classList.add('talking');
+    L.ptt.querySelector('.rec-label').textContent = 'Talking…';
+    setStatus('Paging ' + g.name + '…', '');
+    var uri = SIP.UserAgent.makeURI('sip:' + g.code + '@' + creds.domain);
+    var inv = new SIP.Inviter(ua, uri, { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
+    pttSession = inv;
+    inv.stateChange.addListener(function (st) {
+      if (st === 'Established') attachLiveAudio(inv);
+      if (st === 'Terminated') pttSession = null;
+    });
+    try { await inv.invite(); } catch (e) { setStatus('Page failed: ' + e.message, 'err'); pttEnd(); }
+  }
+
+  function pttEnd() {
+    if (L.ptt) {
+      L.ptt.classList.remove('talking');
+      L.ptt.querySelector('.rec-label').textContent = 'Hold to Talk';
+    }
+    var s = pttSession; pttSession = null;
+    if (s) {
+      try {
+        if (s.state === 'Established') s.bye();
+        else if (s.state === 'Establishing' || s.state === 'Initial') s.cancel();
+      } catch (e) {}
+    }
+    if (registered) setStatus('Live — hold the button to page.', '');
+  }
+
+  if (L.ptt) {
+    L.ptt.addEventListener('pointerdown', function (ev) { ev.preventDefault(); pttStart(); });
+    L.ptt.addEventListener('pointerup', function (ev) { ev.preventDefault(); pttEnd(); });
+    L.ptt.addEventListener('pointercancel', pttEnd);
+    L.ptt.addEventListener('pointerleave', function () { if (pttSession) pttEnd(); });
+  }
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/admin/broadcast.sw.js', { scope: '/admin/broadcast' }).catch(function () {});
   }

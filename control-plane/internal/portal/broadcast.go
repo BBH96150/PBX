@@ -63,6 +63,22 @@ func (s *Server) broadcastConsole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupsJSON, _ := json.Marshal(groups)
+
+	// Live push-to-talk extras: the user registers a WebRTC client (their own
+	// extension's webphone creds) and INVITEs a group's page code. Needs the WS
+	// URL + the user's owned extensions to pick an identity.
+	type extVM struct {
+		ID          string `json:"id"`
+		Extension   string `json:"extension"`
+		DisplayName string `json:"display_name"`
+	}
+	var exts []extVM
+	owned, _ := s.store.FindOwnedExtensions(r.Context(), user.ID)
+	for _, e := range owned {
+		exts = append(exts, extVM{ID: e.ID.String(), Extension: e.Extension, DisplayName: e.DisplayName})
+	}
+	extsJSON, _ := json.Marshal(exts)
+
 	data := map[string]any{
 		"UserName":   user.DisplayName,
 		"UserEmail":  user.Email,
@@ -70,6 +86,9 @@ func (s *Server) broadcastConsole(w http.ResponseWriter, r *http.Request) {
 		"HasTenant":  tok != nil && tok.TenantID != nil,
 		"Ready":      ready,
 		"GroupsJSON": template.JS(groupsJSON), //nolint:gosec // json.Marshal escapes <>&
+		"WSURL":      deriveWebSocketURL(s.portalBaseURL),
+		"ExtsJSON":   template.JS(extsJSON), //nolint:gosec // json.Marshal escapes <>&
+		"LiveReady":  s.portalBaseURL != "" && len(exts) > 0,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpls.ExecuteTemplate(w, "broadcast_page", data); err != nil {
