@@ -24,6 +24,8 @@ All docs for the SIP / UCaaS platform, by audience.
 - **[Architecture & call flows](architecture.md)** — components, the `xml_curl`
   control model, and end-to-end flows (registration, calls, paging, WebRTC,
   CDR/webhook pipeline).
+- **[Security model](security.md)** — authentication, authorization, secrets,
+  webhook signing/SSRF, and input/output safety controls.
 - **[Testing](testing.md)** — the unit + integration test layers and how to run
   them.
 - **[Contributing](../CONTRIBUTING.md)** — workflow, quality bar, and infra
