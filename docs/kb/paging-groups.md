@@ -7,8 +7,10 @@ Paging groups let one person talk to many at once — an overhead intercom annou
 Each group has a delivery mode:
 
 - **Conference page** — dial the group's page code and members auto-answer into a one-way page. Works on any registered phone or softphone.
-- **Multicast** — desk phones listen on a multicast address pushed via provisioning. LAN only, lowest latency.
+- **Multicast** — desk phones listen on a multicast address pushed via provisioning. LAN only, lowest latency. *Multicast listening is auto-provisioned on Yealink phones today; for Polycom/Grandstream, use Conference page (which works on every phone) or configure multicast on the phone manually.*
 - **Native PTT** — a hold-to-talk (half-duplex walkie-talkie) channel for the native app.
+
+> **Not sure which to pick?** Use **Conference page** — it works on every registered phone and softphone with no per-phone setup. Multicast is a LAN latency optimization.
 
 ## Create a paging group
 
