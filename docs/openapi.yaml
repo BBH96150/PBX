@@ -1311,6 +1311,27 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/tenants/{tenantID}/e911-locations:
+    get:
+      tags: [E911Locations]
+      summary: List E911 locations
+      description: "Lists a tenant's E911 dispatchable locations (civic addresses for emergency calls). Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: E911 locations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/E911Location"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   # ---------------------------------------------------------------------------
   # Carriers
   # ---------------------------------------------------------------------------
@@ -2332,6 +2353,38 @@ components:
           type: string
           format: date-time
 
+    E911Location:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        street:
+          type: string
+        street2:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
     Carrier:
       type: object
       properties:
@@ -2813,6 +2866,27 @@ x-webhook-events:
             type: string
           duration_sec:
             type: integer
+    emergency.dialed:
+      summary: >-
+        An extension dialed an emergency number (911 / 933). Fired as the
+        Kari's Law central-point notification so a designated party is alerted
+        in real time. Delivered even when no carrier is configured.
+      payload:
+        type: object
+        properties:
+          dialed:
+            type: string
+            description: The emergency number that was dialed (e.g. "911").
+          extension:
+            type: string
+            description: The calling extension number.
+          caller_id_num:
+            type: string
+          address:
+            type: string
+            description: >-
+              The single-line dispatchable location assigned to the extension
+              (empty if none was assigned).
     test.ping:
       summary: Test delivery fired from the portal's "Send test" button.
       payload:

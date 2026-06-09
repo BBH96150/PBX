@@ -1,0 +1,98 @@
+{{define "e911_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· E911 / Locations</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>E911 dispatchable locations</strong> are the civic addresses sent to the 911 dispatcher when someone dials emergency services (RAY BAUM's Act). Define your locations here, then assign one to each extension below.</p>
+  <ul style="margin:0.4rem 0 0">
+    <li><strong>911</strong> dials emergency services directly — no prefix needed (Kari's Law). The assigned location is stamped onto the call and a notification is sent to your central point.</li>
+    <li><strong>933</strong> is a test number that reads back the dispatchable location on file — dial it to verify before relying on it.</li>
+  </ul>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Locations <span class="muted">({{len .Locations}})</span></h2>
+  {{if .Locations}}
+  <table>
+    <thead><tr><th>Label</th><th>Address</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {{range .Locations}}
+      <tr>
+        <td><strong>{{.Label}}</strong></td>
+        <td class="muted">{{.Street}}{{if .Street2}}, {{.Street2}}{{end}}, {{.City}}, {{.Region}} {{.PostalCode}} {{.Country}}</td>
+        <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
+        <td>
+          <div class="inline" style="margin:0;gap:0.4rem">
+            <form method="post" action="/admin/tenants/{{$t.ID}}/e911/{{.ID}}/toggle" style="margin:0">
+              <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+              <button type="submit" class="secondary btn-sm">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+            </form>
+            <form method="post" action="/admin/tenants/{{$t.ID}}/e911/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Delete location “{{.Label}}”? Extensions assigned to it will be detached.')">
+              <button type="submit" class="secondary btn-sm">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No locations yet — create one below.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>New location</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/e911">
+    <div class="grid-2">
+      <label>Label<input name="label" placeholder="e.g. Main office — 3rd floor" required></label>
+      <label>Street<input name="street" placeholder="123 Main St" required></label>
+    </div>
+    <div class="grid-2">
+      <label>Street 2 <span class="muted">(optional)</span><input name="street2" placeholder="Suite 400"></label>
+      <label>City<input name="city" placeholder="Austin" required></label>
+    </div>
+    <div class="grid-2">
+      <label>State / region<input name="region" placeholder="TX" required></label>
+      <label>ZIP / postal code<input name="postal_code" placeholder="78701" required></label>
+    </div>
+    <div class="grid-2">
+      <label>Country<input name="country" value="US" required></label>
+      <div></div>
+    </div>
+    <button type="submit">Create location</button>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Assign locations to extensions</h2>
+  <p class="muted" style="margin:0 0 0.6rem">Pick a dispatchable location for each phone. Choose “— none —” to clear.</p>
+  {{if .Extensions}}
+  <table>
+    <thead><tr><th>Extension</th><th>Name</th><th>Dispatchable location</th></tr></thead>
+    <tbody>
+      {{range .Extensions}}
+      <tr>
+        <td><code>{{.Extension}}</code></td>
+        <td>{{if .DisplayName}}{{.DisplayName}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/e911/assign" class="inline" style="margin:0;gap:0.4rem">
+            <input type="hidden" name="extension_id" value="{{.ID}}">
+            <select name="location_id">
+              <option value="">— none —</option>
+              {{$ext := .}}
+              {{range $.Locations}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+            </select>
+            <button type="submit" class="secondary btn-sm">Save</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No extensions yet.</p>{{end}}
+</section>
+{{end}}

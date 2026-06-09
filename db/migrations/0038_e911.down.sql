@@ -1,0 +1,4 @@
+BEGIN;
+ALTER TABLE extensions DROP COLUMN IF EXISTS e911_location_id;
+DROP TABLE IF EXISTS e911_locations;
+COMMIT;

@@ -74,7 +74,7 @@ func dialplanXML(t *testing.T, h *Handler, dest, domain string) (int, string) {
 func TestDialplanRoutesToExtension(t *testing.T) {
 	s := dpStore(t)
 	_, domain, _ := dpSeed(t, s)
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 
 	code, xml := dialplanXML(t, h, "6501", domain)
 	if code != http.StatusOK {
@@ -106,7 +106,7 @@ func TestDialplanRoutesToRingGroup(t *testing.T) {
 		t.Fatalf("AddRingGroupMember: %v", err)
 	}
 
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 	code, xml := dialplanXML(t, h, "600", domain)
 	if code != http.StatusOK {
 		t.Fatalf("ring group dialplan status = %d", code)
@@ -127,7 +127,7 @@ func TestDialplanRoutesToQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateQueue: %v", err)
 	}
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 	code, xml := dialplanXML(t, h, "700", domain)
 	if code != http.StatusOK {
 		t.Fatalf("queue dialplan status = %d", code)
@@ -148,7 +148,7 @@ func TestDialplanRoutesToIVR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateIVR: %v", err)
 	}
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 	code, xml := dialplanXML(t, h, "900", domain)
 	if code != http.StatusOK {
 		t.Fatalf("ivr dialplan status = %d", code)
@@ -173,7 +173,7 @@ func TestDialplanRoutesRoomNumberToConference(t *testing.T) {
 		t.Fatalf("CreateConferenceRoom: %v", err)
 	}
 
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 	code, xml := dialplanXML(t, h, "8100", domain)
 	if code != http.StatusOK {
 		t.Fatalf("conference dialplan status = %d", code)
@@ -203,7 +203,7 @@ func TestDialplanRoutesParkFeatureCodeAndSlot(t *testing.T) {
 		t.Fatalf("CreateParkLot: %v", err)
 	}
 
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 
 	// Feature code → park (auto-assign over the slot range).
 	code, xml := dialplanXML(t, h, "*68", domain)
@@ -236,6 +236,80 @@ func TestDialplanRoutesParkFeatureCodeAndSlot(t *testing.T) {
 	}
 }
 
+// dialplanXMLFromCaller is like dialplanXML but lets the test set the calling
+// extension number (Caller-Caller-ID-Number) so emergency resolution can find
+// the right extension + dispatchable location.
+func dialplanXMLFromCaller(t *testing.T, h *Handler, dest, domain, caller string) (int, string) {
+	t.Helper()
+	form := url.Values{
+		"section":                            {"dialplan"},
+		"destination_number":                 {dest},
+		"context":                            {"default"},
+		"variable_sip_h_X-Sip-Tenant-Domain": {domain},
+		"Caller-Caller-ID-Number":            {caller},
+	}
+	req := httptest.NewRequest("POST", "/v1/freeswitch/dialplan", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
+func TestDialplanRoutesEmergencyToCarrierWith911(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, ext := dpSeed(t, s)
+
+	// A tenant carrier so the emergency call has a gateway to bridge out on.
+	carriers, err := s.ListCarriers(ctx)
+	if err != nil {
+		t.Fatalf("ListCarriers: %v", err)
+	}
+	if len(carriers) == 0 {
+		t.Skip("no seeded carriers")
+	}
+	gw := "gw_" + uuid.NewString()[:8]
+	if _, err := s.CreateCarrierAccount(ctx, store.CreateCarrierAccountInput{
+		TenantID: &tid, CarrierID: carriers[0].ID, Name: "trunk",
+		SIPUsername: "u", SIPPassword: "p", FSGatewayName: gw, Register: true,
+	}); err != nil {
+		t.Fatalf("CreateCarrierAccount: %v", err)
+	}
+
+	// A dispatchable location assigned to the calling extension (6501).
+	loc, err := s.CreateE911Location(ctx, store.CreateE911LocationInput{
+		TenantID: tid, Label: "HQ", Street: "123 Main St",
+		City: "Austin", Region: "TX", PostalCode: "78701",
+	})
+	if err != nil {
+		t.Fatalf("CreateE911Location: %v", err)
+	}
+	if err := s.SetExtensionE911Location(ctx, tid, ext.ID, &loc.ID); err != nil {
+		t.Fatalf("SetExtensionE911Location: %v", err)
+	}
+
+	h := NewHandler(s, "kam.example:5060", nil)
+	code, xml := dialplanXMLFromCaller(t, h, "911", domain, "6501")
+	if code != http.StatusOK {
+		t.Fatalf("emergency dialplan status = %d", code)
+	}
+	for _, want := range []string{
+		`application="bridge"`,
+		"sofia/gateway/" + gw + "/911",
+		"x_emergency=true",
+		"x_e911_extension=6501",
+		"x_e911_address=123 Main St, Austin, TX, 78701, US",
+	} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("emergency dialplan missing %q\n%s", want, xml)
+		}
+	}
+	// 911 must NOT be normalized to E.164 — no "+1" prefix on the bridge target.
+	if strings.Contains(xml, "sofia/gateway/"+gw+"/1911") {
+		t.Errorf("911 should be dialed verbatim, not normalized:\n%s", xml)
+	}
+}
+
 func TestDialplanRoutesPageCodeToConference(t *testing.T) {
 	s := dpStore(t)
 	ctx := context.Background()
@@ -251,7 +325,7 @@ func TestDialplanRoutesPageCodeToConference(t *testing.T) {
 		t.Fatalf("AddPagingMember: %v", err)
 	}
 
-	h := NewHandler(s, "kam.example:5060")
+	h := NewHandler(s, "kam.example:5060", nil)
 	code, xml := dialplanXML(t, h, "800", domain)
 	if code != http.StatusOK {
 		t.Fatalf("paging dialplan status = %d", code)

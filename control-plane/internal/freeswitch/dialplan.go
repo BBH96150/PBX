@@ -16,6 +16,7 @@ import (
 
 	"github.com/tendpos/sip-platform/control-plane/internal/e164"
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
+	"github.com/tendpos/sip-platform/control-plane/internal/webhook"
 )
 
 // Handler responds to FreeSWITCH mod_xml_curl dialplan lookups.
@@ -27,11 +28,12 @@ import (
 //	context=public  (carrier gateways' inbound context) → DID lookup → inbound to extension
 type Handler struct {
 	store     *store.Store
-	sipTarget string // host:port of Kamailio
+	sipTarget string              // host:port of Kamailio
+	webhooks  *webhook.Dispatcher // Kari's Law emergency.dialed notifications (nil-safe)
 }
 
-func NewHandler(s *store.Store, kamailioSIPTarget string) *Handler {
-	return &Handler{store: s, sipTarget: kamailioSIPTarget}
+func NewHandler(s *store.Store, kamailioSIPTarget string, webhooks *webhook.Dispatcher) *Handler {
+	return &Handler{store: s, sipTarget: kamailioSIPTarget, webhooks: webhooks}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +85,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handleDefault is the internal-or-outbound branch: extension if it looks
 // like an internal number; PSTN gateway if it looks external.
 func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request, destNum, tenantDomain string) {
+	// Kari's Law: 911 must dial directly (no prefix) and must NEVER be shadowed
+	// by extension/external routing, so emergency detection comes first.
+	if isEmergencyNumber(destNum) {
+		h.routeEmergency(w, r, destNum, tenantDomain)
+		return
+	}
+
 	// Echo/info shortcuts are served from the static dialplan.
 	if destNum == "9999" || destNum == "9001" {
 		writeNotFound(w)
@@ -324,6 +333,135 @@ func (h *Handler) handleOutboundPSTN(w http.ResponseWriter, r *http.Request, des
 		Name:    "outbound-" + dialDigits,
 		Actions: actions,
 	})
+}
+
+// emergencyNumbers is the fixed set of digit strings that must route as an
+// emergency call. 933 is the FCC address-verification test line (it reads back
+// the dispatchable location the carrier has on file). New entries here are the
+// only place emergency dialing is defined.
+var emergencyNumbers = map[string]bool{
+	"911": true,
+	"933": true,
+}
+
+// isEmergencyNumber reports whether the dialed digits are an emergency number.
+// Pure helper — no I/O — so it's trivially unit-testable.
+func isEmergencyNumber(s string) bool {
+	return emergencyNumbers[s]
+}
+
+// routeEmergency handles a 911 (or 933 test) call. It resolves the caller's
+// dispatchable location, bridges the call OUT to the tenant's carrier using the
+// same gateway-selection logic as outbound PSTN (but dialing the literal "911"
+// — NOT an E.164 number), stamps the dispatchable address onto the channel for
+// RAY BAUM's Act, and fires the Kari's Law emergency.dialed notification.
+func (h *Handler) routeEmergency(w http.ResponseWriter, r *http.Request, destNum, tenantDomain string) {
+	ctx := r.Context()
+	caller := r.FormValue("Caller-Caller-ID-Number")
+
+	// Resolve the calling extension's tenant + dispatchable address. This uses a
+	// dedicated query (NOT the main Extension scan) so reading the e911 column
+	// never ripples into the rest of the routing code.
+	var (
+		tenantID  uuid.UUID
+		ext       = caller
+		addrLine  string
+		resolveOK bool
+	)
+	if tenantDomain != "" && caller != "" {
+		if r, err := h.store.ResolveE911ForExtensionNumber(ctx, tenantDomain, caller); err == nil {
+			resolveOK = true
+			tenantID = r.TenantID
+			ext = r.Extension
+			if r.Address != nil {
+				addrLine = r.Address.SingleLine()
+			}
+		} else {
+			slog.Warn("e911: could not resolve calling extension; routing without dispatchable address",
+				"caller", caller, "tenant_domain", tenantDomain, "err", err)
+		}
+	}
+	if addrLine == "" {
+		slog.Warn("e911: emergency call has no dispatchable location assigned",
+			"caller", caller, "tenant_domain", tenantDomain, "dialed", destNum)
+	}
+
+	// Pick the tenant's carrier the same way outbound PSTN does. If we couldn't
+	// resolve the extension's tenant, fall back to the platform-wide primary.
+	var acct *store.CarrierAccount
+	if resolveOK && tenantID != uuid.Nil {
+		if a, perr := h.store.PickPrimaryCarrierAccountForTenant(ctx, tenantID); perr == nil {
+			acct = a
+		} else if !errors.Is(perr, pgx.ErrNoRows) {
+			slog.Warn("e911: tenant carrier lookup failed; will fall back", "tenant", tenantID, "err", perr)
+		}
+	} else if tenantDomain != "" {
+		if tenant, terr := h.store.GetTenantBySIPDomain(ctx, tenantDomain); terr == nil && tenant != nil {
+			if a, perr := h.store.PickPrimaryCarrierAccountForTenant(ctx, tenant.ID); perr == nil {
+				acct = a
+				if tenantID == uuid.Nil {
+					tenantID = tenant.ID
+				}
+			}
+		}
+	}
+	if acct == nil {
+		if a, perr := h.store.PickPrimaryCarrierAccount(ctx); perr == nil {
+			acct = a
+		}
+	}
+
+	// Fire the Kari's Law notification regardless of whether a carrier is
+	// configured — a central point must learn that 911 was dialed.
+	if h.webhooks != nil && tenantID != uuid.Nil {
+		h.webhooks.Fire(tenantID, "emergency.dialed", map[string]any{
+			"dialed":        destNum,
+			"extension":     ext,
+			"caller_id_num": caller,
+			"address":       addrLine,
+		})
+	}
+
+	if acct == nil {
+		// No carrier to route to. Don't silently drop: answer, play a notice, and
+		// hang up so the caller hears something. Best-effort (a logged error +
+		// hangup is acceptable for this edge per spec).
+		slog.Error("e911: no carrier configured for emergency call — cannot reach PSAP",
+			"caller", caller, "tenant_domain", tenantDomain, "dialed", destNum)
+		writeDialplan(w, dialplanData{
+			Context: "default",
+			Name:    "emergency-no-carrier-" + destNum,
+			Actions: []dialplanAction{
+				{App: "set", Data: "x_emergency=true"},
+				{App: "answer"},
+				{App: "sleep", Data: "500"},
+				{App: "playback", Data: "ivr/ivr-call_cannot_be_completed_as_dialed.wav"},
+				{App: "hangup", Data: "NO_ROUTE_DESTINATION"},
+			},
+		})
+		return
+	}
+
+	writeDialplan(w, dialplanData{
+		Context: "default",
+		Name:    "emergency-" + destNum,
+		Actions: buildEmergencyActions(acct.FSGatewayName, ext, addrLine),
+	})
+}
+
+// buildEmergencyActions is the pure builder for the 911 dialplan. It stamps the
+// emergency markers + dispatchable address onto the channel and bridges the
+// literal "911" out through the carrier gateway (911 is NOT E.164, so it is
+// dialed verbatim — never normalized). Pure function — no I/O — for unit tests.
+func buildEmergencyActions(gatewayName, ext, address string) []dialplanAction {
+	return []dialplanAction{
+		{App: "set", Data: "hangup_after_bridge=true"},
+		{App: "set", Data: "x_call_direction=emergency"},
+		{App: "set", Data: "x_emergency=true"},
+		{App: "set", Data: "x_e911_extension=" + ext},
+		{App: "set", Data: "x_e911_address=" + address},
+		{App: "bridge", Data: "sofia/gateway/" + gatewayName + "/911"},
+	}
 }
 
 // handleInboundPSTN serves the dialplan for calls arriving on the external

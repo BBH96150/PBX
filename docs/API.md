@@ -71,8 +71,8 @@ Configure per tenant in the portal at **Tenant → Webhooks**
 signing secret, and an optional event subscription list (empty = all events).
 The portal shows each endpoint's last delivery status.
 
-**Events:** `call.completed`, `trunk.down`, `trunk.up`, `voicemail.new`
-(plus `test.ping` from the Send-test button).
+**Events:** `call.completed`, `trunk.down`, `trunk.up`, `voicemail.new`,
+`emergency.dialed` (plus `test.ping` from the Send-test button).
 
 **Request:** `POST` with JSON body:
 
@@ -103,3 +103,4 @@ if not constant_time_equals(expected, header["X-Webhook-Signature"]):
 - **call.completed** — `call_uuid, direction, from, to, caller_id_num, caller_id_name, started_at, duration_sec, billable_sec, disposition, hangup_cause`
 - **trunk.down / trunk.up** — `trunk, carrier, gateway, prev_state, state`
 - **voicemail.new** — `extension_id, user, domain, caller_id_num, caller_id_name, duration_sec`
+- **emergency.dialed** — `dialed, extension, caller_id_num, address` (Kari's Law: fired when an extension dials 911/933)
