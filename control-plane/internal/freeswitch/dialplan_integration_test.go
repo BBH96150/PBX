@@ -91,6 +91,75 @@ func TestDialplanRoutesToExtension(t *testing.T) {
 	}
 }
 
+func TestDialplanRoutesToRingGroup(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, ext := dpSeed(t, s)
+
+	rg, err := s.CreateRingGroup(ctx, store.CreateRingGroupInput{
+		TenantID: tid, Extension: "600", Name: "Sales", Strategy: "simultaneous",
+	})
+	if err != nil {
+		t.Fatalf("CreateRingGroup: %v", err)
+	}
+	if _, err := s.AddRingGroupMember(ctx, store.AddRingGroupMemberInput{RingGroupID: rg.ID, ExtensionID: ext.ID}); err != nil {
+		t.Fatalf("AddRingGroupMember: %v", err)
+	}
+
+	h := NewHandler(s, "kam.example:5060")
+	code, xml := dialplanXML(t, h, "600", domain)
+	if code != http.StatusOK {
+		t.Fatalf("ring group dialplan status = %d", code)
+	}
+	for _, want := range []string{`application="bridge"`, "sip:6501@" + domain} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("ring-group dialplan missing %q\n%s", want, xml)
+		}
+	}
+}
+
+func TestDialplanRoutesToQueue(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, _ := dpSeed(t, s)
+
+	q, err := s.CreateQueue(ctx, store.CreateQueueInput{TenantID: tid, Extension: "700", Name: "Support"})
+	if err != nil {
+		t.Fatalf("CreateQueue: %v", err)
+	}
+	h := NewHandler(s, "kam.example:5060")
+	code, xml := dialplanXML(t, h, "700", domain)
+	if code != http.StatusOK {
+		t.Fatalf("queue dialplan status = %d", code)
+	}
+	for _, want := range []string{`application="callcenter"`, q.ID.String()} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("queue dialplan missing %q\n%s", want, xml)
+		}
+	}
+}
+
+func TestDialplanRoutesToIVR(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, _ := dpSeed(t, s)
+
+	ivr, err := s.CreateIVR(ctx, store.CreateIVRInput{TenantID: tid, Name: "Menu", Extension: "900"})
+	if err != nil {
+		t.Fatalf("CreateIVR: %v", err)
+	}
+	h := NewHandler(s, "kam.example:5060")
+	code, xml := dialplanXML(t, h, "900", domain)
+	if code != http.StatusOK {
+		t.Fatalf("ivr dialplan status = %d", code)
+	}
+	for _, want := range []string{`application="ivr"`, ivr.ID.String()} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("ivr dialplan missing %q\n%s", want, xml)
+		}
+	}
+}
+
 func TestDialplanRoutesPageCodeToConference(t *testing.T) {
 	s := dpStore(t)
 	ctx := context.Background()
