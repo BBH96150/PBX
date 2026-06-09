@@ -445,22 +445,25 @@ func (h *Handler) routeEmergency(w http.ResponseWriter, r *http.Request, destNum
 	writeDialplan(w, dialplanData{
 		Context: "default",
 		Name:    "emergency-" + destNum,
-		Actions: buildEmergencyActions(acct.FSGatewayName, ext, addrLine),
+		Actions: buildEmergencyActions(acct.FSGatewayName, destNum, ext, addrLine),
 	})
 }
 
-// buildEmergencyActions is the pure builder for the 911 dialplan. It stamps the
-// emergency markers + dispatchable address onto the channel and bridges the
-// literal "911" out through the carrier gateway (911 is NOT E.164, so it is
-// dialed verbatim — never normalized). Pure function — no I/O — for unit tests.
-func buildEmergencyActions(gatewayName, ext, address string) []dialplanAction {
+// buildEmergencyActions is the pure builder for the emergency dialplan. It
+// stamps the emergency markers + dispatchable address onto the channel and
+// bridges the DIALED emergency number VERBATIM out through the carrier gateway
+// (these are NOT E.164, so they are dialed as-is — never normalized). The exact
+// number matters: 911 reaches the PSAP, while 933 must reach the carrier's
+// address-verification test line — bridging 933 to "911" would place a real
+// emergency call. Pure function — no I/O — for unit tests.
+func buildEmergencyActions(gatewayName, dialed, ext, address string) []dialplanAction {
 	return []dialplanAction{
 		{App: "set", Data: "hangup_after_bridge=true"},
 		{App: "set", Data: "x_call_direction=emergency"},
 		{App: "set", Data: "x_emergency=true"},
 		{App: "set", Data: "x_e911_extension=" + ext},
 		{App: "set", Data: "x_e911_address=" + address},
-		{App: "bridge", Data: "sofia/gateway/" + gatewayName + "/911"},
+		{App: "bridge", Data: "sofia/gateway/" + gatewayName + "/" + dialed},
 	}
 }
 

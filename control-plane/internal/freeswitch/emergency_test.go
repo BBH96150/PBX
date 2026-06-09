@@ -21,7 +21,7 @@ func TestIsEmergencyNumber(t *testing.T) {
 }
 
 func TestBuildEmergencyActions(t *testing.T) {
-	actions := buildEmergencyActions("cc-main", "6501", "123 Main St, Suite 4, Austin, TX, 78701, US")
+	actions := buildEmergencyActions("cc-main", "911", "6501", "123 Main St, Suite 4, Austin, TX, 78701, US")
 
 	var sb strings.Builder
 	var bridgeData string
@@ -48,9 +48,24 @@ func TestBuildEmergencyActions(t *testing.T) {
 	}
 }
 
+// 933 (address-verification test) MUST dial the carrier's 933 line, not 911 —
+// otherwise "testing" would place a real emergency call.
+func TestBuildEmergencyActions933DialsTestLineNot911(t *testing.T) {
+	actions := buildEmergencyActions("cc-main", "933", "6501", "addr")
+	var bridgeData string
+	for _, a := range actions {
+		if a.App == "bridge" {
+			bridgeData = a.Data
+		}
+	}
+	if want := "sofia/gateway/cc-main/933"; bridgeData != want {
+		t.Fatalf("933 must bridge to %q (the test line), got %q — bridging 933 to /911 would place a real 911 call", want, bridgeData)
+	}
+}
+
 func TestBuildEmergencyActionsNoAddress(t *testing.T) {
 	// An unassigned extension still routes — the address var is just empty.
-	actions := buildEmergencyActions("gw1", "1000", "")
+	actions := buildEmergencyActions("gw1", "911", "1000", "")
 	var bridgeData, addr string
 	hasEmergency := false
 	for _, a := range actions {
