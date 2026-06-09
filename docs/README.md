@@ -17,6 +17,8 @@ All docs for the SIP / UCaaS platform, by audience.
   `https://pbx.tendpos.com/v1/openapi.yaml`).
 - **[API quickstart (curl)](api-examples.md)** — copy-paste recipes for auth,
   reads, writes, and webhook signature verification.
+- **[Integration examples](examples/README.md)** — runnable webhook receivers
+  (Python + Go) that verify signatures and handle events.
 - **[API & webhooks notes](API.md)** — auth model, scopes, event catalog.
 
 ## For developers & operators
