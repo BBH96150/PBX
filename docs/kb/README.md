@@ -29,6 +29,8 @@ New here? Start with [Welcome: how your phone system is organized](getting-start
 - [Call queues](calling-call-queues.md)
 - [IVR menus (auto-attendant)](calling-ivr-menus.md)
 - [Call forwarding, do-not-disturb, and recording](calling-forwarding-and-dnd.md)
+- [Call recording](calling-call-recording.md)
+- [Caller ID (outbound number, CNAM, inbound)](calling-caller-id.md)
 - [Set up voicemail and voicemail-to-email](voicemail-setup.md)
 - [Music on hold](calling-music-on-hold.md)
 
