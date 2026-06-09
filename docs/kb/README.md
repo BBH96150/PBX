@@ -21,6 +21,8 @@ New here? Start with [Welcome: how your phone system is organized](getting-start
 ## Calling Features
 
 - [Route inbound phone numbers (DIDs)](numbers-route-dids.md)
+- [Port an existing phone number](numbers-porting.md)
+- [Emergency calling (911) — important](emergency-calling.md)
 - [Outbound calling routes](numbers-outbound-routing.md)
 - [Business hours and after-hours routing](numbers-business-hours.md)
 - [Ring groups](calling-ring-groups.md)
