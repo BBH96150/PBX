@@ -49,7 +49,7 @@ func TestFireDeliversSignsAndRecords(t *testing.T) {
 		body []byte
 	}
 	got := make(chan received, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		select {
 		case got <- received{sig: r.Header.Get("X-Webhook-Signature"), body: b}:
@@ -120,7 +120,7 @@ func TestFireSkipsUnsubscribedEvent(t *testing.T) {
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id=$1", ten.ID) })
 
 	hit := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		select {
 		case hit <- struct{}{}:
 		default:
