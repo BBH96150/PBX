@@ -82,6 +82,8 @@ tags:
     description: Auto-attendant menus and their digit options.
   - name: PagingGroups
     description: Paging / PTT (intercom) groups and rosters.
+  - name: ConferenceRooms
+    description: Meet-me dial-in conference bridges.
   - name: Carriers
     description: PSTN carriers and per-tenant carrier (trunk) accounts.
   - name: Voicemail
@@ -1267,6 +1269,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/tenants/{tenantID}/conference-rooms:
+    get:
+      tags: [ConferenceRooms]
+      summary: List conference rooms
+      description: "Lists a tenant's meet-me conference bridges. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Conference rooms.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConferenceRoom"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   # ---------------------------------------------------------------------------
   # Carriers
   # ---------------------------------------------------------------------------
@@ -2229,6 +2252,38 @@ components:
           type: string
         display_name:
           type: string
+
+    ConferenceRoom:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        name:
+          type: string
+        pin:
+          type: string
+        moderator_pin:
+          type: string
+        max_members:
+          type: integer
+        record:
+          type: boolean
+        announce_count:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     Carrier:
       type: object

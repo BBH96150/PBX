@@ -145,6 +145,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/queues", s.listQueues)
 			r.Get("/paging-groups", s.listPagingGroups)
 			r.Get("/paging-groups/{groupID}/members", s.listPagingGroupMembers)
+			r.Get("/conference-rooms", s.listConferenceRooms)
 			r.Get("/devices", s.listDevices)
 		})
 	})

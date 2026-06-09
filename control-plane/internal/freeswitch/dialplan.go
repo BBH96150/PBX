@@ -130,6 +130,10 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request, destNum,
 					h.routePaging(w, pg, destNum, "default")
 					return
 				}
+				if cr, crErr := h.store.LookupConferenceRoomByExtension(ctx, tenantDomain, destNum); crErr == nil {
+					h.routeConference(w, cr, destNum, "default")
+					return
+				}
 			}
 			writeHangup(w, "default", "NO_USER_RESPONSE")
 			return
@@ -711,6 +715,112 @@ func buildPagingActions(info *store.PagingRoutingInfo, sipTarget string) []dialp
 		// Pager joins as moderator; endconf tears the page down when they leave.
 		{App: "conference", Data: confName + "@paging+flags{endconf|moderator}"},
 	}
+}
+
+// routeConference renders the dialplan for a meet-me conference bridge: answer,
+// optionally collect + verify a PIN, then join the FreeSWITCH `default`
+// conference profile. The conference name is namespaced per tenant + room
+// extension so two tenants reusing the same room number never collide.
+func (h *Handler) routeConference(w http.ResponseWriter, room *store.ConferenceRoom, displayDest, context string) {
+	direction := "internal"
+	if context == "public" {
+		direction = "inbound"
+	}
+	writeDialplan(w, dialplanData{
+		Context: context,
+		Name:    "conference-" + displayDest,
+		Actions: buildConferenceActions(room, direction),
+	})
+}
+
+// buildConferenceActions is the pure builder for the meet-me conference
+// dialplan. It answers the call, optionally prompts for a PIN, and joins the
+// `default` conference profile under a per-tenant/room name.
+//
+//   - No PIN configured            → join directly (member).
+//   - Member PIN only              → prompt; on match join as member.
+//   - Member + moderator PIN        → prompt; moderator PIN joins with
+//     +flags{moderator|endconf}, member PIN joins as a plain member. The
+//     play_and_get_digits regex matches EITHER pin, and a runtime ${cond}
+//     selects the flags based on which one was entered.
+//   - Moderator PIN only            → prompt; on match join as moderator.
+//
+// record=true adds record_session; max_members>0 caps the room; announce_count
+// toggles the enter/exit member-count announcement (the default profile
+// announces by default, so we only need to suppress it when false).
+func buildConferenceActions(room *store.ConferenceRoom, direction string) []dialplanAction {
+	confName := room.TenantID.String() + "_" + room.Extension
+	memberFlags := ""
+	moderatorFlags := "moderator|endconf"
+
+	actions := []dialplanAction{
+		{App: "set", Data: "x_call_direction=" + direction},
+		{App: "set", Data: "x_tenant_id=" + room.TenantID.String()},
+		{App: "set", Data: "x_conference_room_id=" + room.ID.String()},
+		{App: "answer"},
+		{App: "sleep", Data: "500"},
+	}
+
+	if room.MaxMembers > 0 {
+		actions = append(actions, dialplanAction{
+			App:  "set",
+			Data: fmt.Sprintf("conference_max_members=%d", room.MaxMembers),
+		})
+	}
+	if !room.AnnounceCount {
+		// Suppress the default profile's enter/exit count announcement.
+		actions = append(actions, dialplanAction{App: "set", Data: "conference_utils_auto_no_video=true"})
+	}
+
+	// Channel var holding the flags we'll join the conference with.
+	flags := memberFlags
+
+	switch {
+	case room.PIN == "" && room.ModeratorPIN == "":
+		// No PIN — join straight in.
+	case room.PIN != "" && room.ModeratorPIN != "":
+		// Accept either PIN; pick flags by which one was entered.
+		regex := room.PIN + "|" + room.ModeratorPIN
+		actions = append(actions, dialplanAction{
+			App:  "play_and_get_digits",
+			Data: fmt.Sprintf("1 12 3 5000 # silence_stream://250 silence_stream://250 conf_pin %s", regex),
+		})
+		actions = append(actions, dialplanAction{
+			App: "set",
+			Data: fmt.Sprintf("conf_flags=${cond(${conf_pin} == %s ? %s : %s)}",
+				room.ModeratorPIN, moderatorFlags, memberFlags),
+		})
+		flags = "${conf_flags}"
+	case room.ModeratorPIN != "":
+		// Moderator-only PIN: prompt, and everyone who knows it is a moderator.
+		actions = append(actions, dialplanAction{
+			App:  "play_and_get_digits",
+			Data: fmt.Sprintf("1 12 3 5000 # silence_stream://250 silence_stream://250 conf_pin %s", room.ModeratorPIN),
+		})
+		flags = moderatorFlags
+	default:
+		// Member-only PIN.
+		actions = append(actions, dialplanAction{
+			App:  "play_and_get_digits",
+			Data: fmt.Sprintf("1 12 3 5000 # silence_stream://250 silence_stream://250 conf_pin %s", room.PIN),
+		})
+	}
+
+	if room.Record {
+		recPath := fmt.Sprintf("$${recordings_dir}/%s/${strftime(%%Y-%%m-%%d)}/conf-%s-${uuid}.wav",
+			room.TenantID.String(), room.Extension)
+		actions = append(actions,
+			dialplanAction{App: "set", Data: "recording_path=" + recPath},
+			dialplanAction{App: "record_session", Data: "${recording_path}"},
+		)
+	}
+
+	confData := confName + "@default"
+	if flags != "" {
+		confData += "+flags{" + flags + "}"
+	}
+	actions = append(actions, dialplanAction{App: "conference", Data: confData})
+	return actions
 }
 
 // ---------------------------------------------------------------------------

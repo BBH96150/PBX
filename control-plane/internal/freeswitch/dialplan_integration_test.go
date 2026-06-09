@@ -160,6 +160,36 @@ func TestDialplanRoutesToIVR(t *testing.T) {
 	}
 }
 
+func TestDialplanRoutesRoomNumberToConference(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, _ := dpSeed(t, s)
+
+	room, err := s.CreateConferenceRoom(ctx, store.CreateConferenceRoomInput{
+		TenantID: tid, Name: "All hands", Extension: "8100",
+		PIN: "1234", ModeratorPIN: "9999", AnnounceCount: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConferenceRoom: %v", err)
+	}
+
+	h := NewHandler(s, "kam.example:5060")
+	code, xml := dialplanXML(t, h, "8100", domain)
+	if code != http.StatusOK {
+		t.Fatalf("conference dialplan status = %d", code)
+	}
+	for _, want := range []string{
+		`application="conference"`,
+		`application="play_and_get_digits"`, // PIN prompt (both PINs set)
+		tid.String() + "_8100@default",      // per-tenant room in the default profile
+		"x_conference_room_id=" + room.ID.String(),
+	} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("conference dialplan missing %q\n%s", want, xml)
+		}
+	}
+}
+
 func TestDialplanRoutesPageCodeToConference(t *testing.T) {
 	s := dpStore(t)
 	ctx := context.Background()
