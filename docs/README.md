@@ -28,6 +28,8 @@ All docs for the SIP / UCaaS platform, by audience.
   webhook signing/SSRF, and input/output safety controls.
 - **[Testing](testing.md)** — the unit + integration test layers and how to run
   them.
+- **[Operator runbook](runbook.md)** — deploy flow, the ops workflows, and
+  incident recovery (disk, Kamailio crash-loop, paging, WebRTC).
 - **[Contributing](../CONTRIBUTING.md)** — workflow, quality bar, and infra
   gotchas.
 - **Component READMEs** — [root](../README.md) ·
