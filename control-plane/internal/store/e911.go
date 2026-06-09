@@ -195,11 +195,18 @@ type E911Resolution struct {
 // NOT touch the main Extension scan paths. Returns pgx.ErrNoRows if no such
 // extension exists in the domain.
 func (s *Store) ResolveE911ForExtensionNumber(ctx context.Context, tenantDomain, extNumber string) (*E911Resolution, error) {
+	// COALESCE every joined location column: on an unassigned extension the
+	// LEFT JOIN yields all-NULL location columns, which can't scan into the
+	// non-nullable struct fields. `lid` (the only genuinely-nullable scan)
+	// tells us whether a real address was joined.
 	const q = `
 		SELECT e.tenant_id, e.sip_username, e.extension,
-		       l.id, l.tenant_id, l.label, l.street, COALESCE(l.street2,''),
-		       l.city, l.region, l.postal_code, l.country, l.enabled,
-		       l.created_at, l.updated_at
+		       l.id,
+		       COALESCE(l.tenant_id, '00000000-0000-0000-0000-000000000000'::uuid),
+		       COALESCE(l.label,''), COALESCE(l.street,''), COALESCE(l.street2,''),
+		       COALESCE(l.city,''), COALESCE(l.region,''), COALESCE(l.postal_code,''),
+		       COALESCE(l.country,''), COALESCE(l.enabled,false),
+		       COALESCE(l.created_at, now()), COALESCE(l.updated_at, now())
 		  FROM extensions e
 		  JOIN sip_domains d ON d.id = e.sip_domain_id
 		  LEFT JOIN e911_locations l ON l.id = e.e911_location_id
