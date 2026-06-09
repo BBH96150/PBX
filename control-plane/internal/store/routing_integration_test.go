@@ -23,7 +23,8 @@ func makeCarrierAccount(t *testing.T, s *Store, ten *Tenant) *CarrierAccount {
 	}
 	ca, err := s.CreateCarrierAccount(ctx, CreateCarrierAccountInput{
 		TenantID: &ten.ID, CarrierID: carriers[0].ID, Name: "trunk",
-		SIPUsername: "u", SIPPassword: "p", FSGatewayName: "gw-" + uuid.NewString()[:8], Register: true,
+		// fs_gateway_name CHECK is ^[a-z0-9_]+$ (no dashes); uuid's first block is hex.
+		SIPUsername: "u", SIPPassword: "p", FSGatewayName: "gw_" + uuid.NewString()[:8], Register: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateCarrierAccount: %v", err)
