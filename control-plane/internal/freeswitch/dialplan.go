@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tendpos/sip-platform/control-plane/internal/e164"
@@ -133,6 +135,18 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request, destNum,
 				if cr, crErr := h.store.LookupConferenceRoomByExtension(ctx, tenantDomain, destNum); crErr == nil {
 					h.routeConference(w, cr, destNum, "default")
 					return
+				}
+				// Call park: a feature code (e.g. *68) parks the call into an
+				// auto-assigned orbit slot; a bare slot number retrieves it.
+				if lot, plErr := h.store.LookupParkLotByFeatureCode(ctx, tenantDomain, destNum); plErr == nil {
+					h.routePark(w, lot, destNum, "default")
+					return
+				}
+				if slot, ok := parseSlot(destNum); ok {
+					if lot, plErr := h.store.LookupParkLotBySlot(ctx, tenantDomain, slot); plErr == nil {
+						h.routeParkRetrieve(w, lot, slot, destNum, "default")
+						return
+					}
 				}
 			}
 			writeHangup(w, "default", "NO_USER_RESPONSE")
@@ -821,6 +835,95 @@ func buildConferenceActions(room *store.ConferenceRoom, direction string) []dial
 	}
 	actions = append(actions, dialplanAction{App: "conference", Data: confData})
 	return actions
+}
+
+// parseSlot returns the integer value of an all-digit destination number (a
+// park-retrieve slot). Anything containing a non-digit (feature codes like *68,
+// extensions, E.164) returns ok=false so it never gets treated as a slot.
+func parseSlot(dest string) (int, bool) {
+	if dest == "" {
+		return 0, false
+	}
+	for _, r := range dest {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.Atoi(dest)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// valetLotID namespaces a park lot's valet-parking lot id per tenant so two
+// tenants reusing the same lot name never share orbit slots. The name is
+// scrubbed to ascii-alnum/underscore (valet lot ids are referenced verbatim in
+// the dialplan, so we keep them simple and collision-resistant).
+func valetLotID(tenantID uuid.UUID, name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_':
+			b.WriteRune(r)
+		}
+	}
+	return strings.ReplaceAll(tenantID.String(), "-", "") + "_" + b.String()
+}
+
+// routePark renders the dialplan for parking an in-progress call: answer, then
+// hand the call to mod_valet_parking in auto-assign mode, which picks the next
+// free slot in [slot_start, slot_end] and announces it to the parking party.
+//
+// NOTE: requires mod_valet_parking loaded on the FreeSWITCH box (see
+// freeswitch/conf/autoload_configs/modules.conf.xml; deploying that to the box
+// is an ops concern handled separately).
+func (h *Handler) routePark(w http.ResponseWriter, lot *store.ParkLot, displayDest, context string) {
+	writeDialplan(w, dialplanData{
+		Context: context,
+		Name:    "park-" + displayDest,
+		Actions: buildParkActions(lot),
+	})
+}
+
+// routeParkRetrieve renders the dialplan for retrieving a call parked in a
+// specific orbit slot: valet_park with an explicit slot bridges the caller to
+// whoever is parked there.
+func (h *Handler) routeParkRetrieve(w http.ResponseWriter, lot *store.ParkLot, slot int, displayDest, context string) {
+	writeDialplan(w, dialplanData{
+		Context: context,
+		Name:    "park-retrieve-" + displayDest,
+		Actions: buildRetrieveActions(lot, slot),
+	})
+}
+
+// buildParkActions is the pure builder for parking a call. It answers and then
+// calls valet_park in "auto in" mode, letting mod_valet_parking auto-assign the
+// next free slot in the lot's range and announce it.
+func buildParkActions(lot *store.ParkLot) []dialplanAction {
+	lotID := valetLotID(lot.TenantID, lot.Name)
+	return []dialplanAction{
+		{App: "set", Data: "x_call_direction=internal"},
+		{App: "set", Data: "x_tenant_id=" + lot.TenantID.String()},
+		{App: "set", Data: "x_park_lot_id=" + lot.ID.String()},
+		{App: "answer"},
+		{App: "valet_park", Data: fmt.Sprintf("%s auto in %d %d", lotID, lot.SlotStart, lot.SlotEnd)},
+	}
+}
+
+// buildRetrieveActions is the pure builder for retrieving a parked call from an
+// explicit orbit slot.
+func buildRetrieveActions(lot *store.ParkLot, slot int) []dialplanAction {
+	lotID := valetLotID(lot.TenantID, lot.Name)
+	return []dialplanAction{
+		{App: "set", Data: "x_call_direction=internal"},
+		{App: "set", Data: "x_tenant_id=" + lot.TenantID.String()},
+		{App: "set", Data: "x_park_lot_id=" + lot.ID.String()},
+		{App: "valet_park", Data: fmt.Sprintf("%s %d", lotID, slot)},
+	}
 }
 
 // ---------------------------------------------------------------------------

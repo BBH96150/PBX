@@ -99,6 +99,21 @@ func (s *Server) listConferenceRooms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rooms)
 }
 
+// listParkLots returns a tenant's call-park lots.
+func (s *Server) listParkLots(w http.ResponseWriter, r *http.Request) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	lots, err := s.store.ListParkLotsForTenant(r.Context(), tid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, lots)
+}
+
 // listVoicemailMessages returns an extension's voicemail messages (metadata
 // only — the audio path is never serialized).
 func (s *Server) listVoicemailMessages(w http.ResponseWriter, r *http.Request) {

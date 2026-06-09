@@ -46,6 +46,9 @@
     <!-- Phase 3 Wave 4: call queues / ACD -->
     <load module="mod_callcenter"/>
 
+    <!-- Call park: valet_park orbit slots (park + retrieve from any phone) -->
+    <load module="mod_valet_parking"/>
+
     <!-- Phase 3+ (later waves):
     <load module="mod_fifo"/>
     <load module="mod_conference"/>

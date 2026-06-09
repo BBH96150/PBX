@@ -1290,6 +1290,27 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/tenants/{tenantID}/park-lots:
+    get:
+      tags: [ParkLots]
+      summary: List park lots
+      description: "Lists a tenant's call-park lots (feature code + orbit slot range). Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Park lots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ParkLot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   # ---------------------------------------------------------------------------
   # Carriers
   # ---------------------------------------------------------------------------
@@ -2276,6 +2297,32 @@ components:
           type: boolean
         announce_count:
           type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ParkLot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        feature_code:
+          type: string
+        slot_start:
+          type: integer
+        slot_end:
+          type: integer
         enabled:
           type: boolean
         created_at:

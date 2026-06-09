@@ -190,6 +190,52 @@ func TestDialplanRoutesRoomNumberToConference(t *testing.T) {
 	}
 }
 
+func TestDialplanRoutesParkFeatureCodeAndSlot(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, _ := dpSeed(t, s)
+
+	lot, err := s.CreateParkLot(ctx, store.CreateParkLotInput{
+		TenantID: tid, Name: "Front desk", FeatureCode: "*68",
+		SlotStart: 700, SlotEnd: 779,
+	})
+	if err != nil {
+		t.Fatalf("CreateParkLot: %v", err)
+	}
+
+	h := NewHandler(s, "kam.example:5060")
+
+	// Feature code → park (auto-assign over the slot range).
+	code, xml := dialplanXML(t, h, "*68", domain)
+	if code != http.StatusOK {
+		t.Fatalf("park dialplan status = %d", code)
+	}
+	for _, want := range []string{
+		`application="valet_park"`,
+		"auto in 700 779",
+		"x_park_lot_id=" + lot.ID.String(),
+	} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("park dialplan missing %q\n%s", want, xml)
+		}
+	}
+
+	// Slot number → retrieve (explicit slot, no auto).
+	code, xml = dialplanXML(t, h, "703", domain)
+	if code != http.StatusOK {
+		t.Fatalf("park-retrieve dialplan status = %d", code)
+	}
+	if !strings.Contains(xml, `application="valet_park"`) {
+		t.Errorf("park-retrieve dialplan missing valet_park\n%s", xml)
+	}
+	if strings.Contains(xml, "auto in") {
+		t.Errorf("park-retrieve should target an explicit slot, not auto:\n%s", xml)
+	}
+	if !strings.Contains(xml, " 703") {
+		t.Errorf("park-retrieve dialplan missing slot 703\n%s", xml)
+	}
+}
+
 func TestDialplanRoutesPageCodeToConference(t *testing.T) {
 	s := dpStore(t)
 	ctx := context.Background()

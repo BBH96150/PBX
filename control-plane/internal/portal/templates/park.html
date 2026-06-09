@@ -1,0 +1,62 @@
+{{define "park_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Call park</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>Call park</strong> puts an in-progress call on hold in a numbered "orbit" slot so any phone can pick it back up.</p>
+  <ul style="margin:0.4rem 0 0">
+    <li><strong>Feature code</strong> — blind-transfer a live call to this code (e.g. <code>*68</code>) to park it. FreeSWITCH auto-assigns the next free slot and announces it.</li>
+    <li><strong>Slot range</strong> — the orbit numbers parked calls land in (e.g. <code>700</code>–<code>779</code>). Dial the announced slot from any phone to retrieve the call.</li>
+  </ul>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Park lots <span class="muted">({{len .Lots}})</span></h2>
+  {{if .Lots}}
+  <table>
+    <thead><tr><th>Name</th><th>Feature code</th><th>Slot range</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {{range .Lots}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td><code>{{.FeatureCode}}</code></td>
+        <td><code>{{.SlotStart}}</code>–<code>{{.SlotEnd}}</code></td>
+        <td>{{if .Enabled}}<span class="pill pill-ok">enabled</span>{{else}}<span class="pill">disabled</span>{{end}}</td>
+        <td>
+          <div class="inline" style="margin:0;gap:0.4rem">
+            <form method="post" action="/admin/tenants/{{$t.ID}}/park/{{.ID}}/toggle" style="margin:0">
+              <input type="hidden" name="enabled" value="{{if .Enabled}}false{{else}}true{{end}}">
+              <button type="submit" class="secondary btn-sm">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+            </form>
+            <form method="post" action="/admin/tenants/{{$t.ID}}/park/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Delete park lot “{{.Name}}”? This cannot be undone.')">
+              <button type="submit" class="secondary btn-sm">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No park lots yet — create one below.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>New park lot</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/park">
+    <div class="grid-2">
+      <label>Name<input name="name" placeholder="e.g. Front desk" required></label>
+      <label>Feature code <span class="muted">(park)</span><input name="feature_code" placeholder="e.g. *68" pattern="[0-9*#]+" required></label>
+    </div>
+    <div class="grid-2">
+      <label>Slot start<input name="slot_start" type="number" placeholder="e.g. 700" min="0" max="99999" required></label>
+      <label>Slot end<input name="slot_end" type="number" placeholder="e.g. 779" min="0" max="99999" required></label>
+    </div>
+    <button type="submit">Create park lot</button>
+  </form>
+</section>
+{{end}}
