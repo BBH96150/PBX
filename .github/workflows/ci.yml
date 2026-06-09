@@ -43,6 +43,17 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: control-plane/go.sum
+      - name: KB embed in sync
+        # The customer KB is canonical in docs/kb/ and embedded (for the in-app
+        # Help Center) at control-plane/internal/portal/kbcontent/. Fail if they
+        # drift so the served Help Center never lags the docs.
+        run: |
+          if ! diff -rq docs/kb control-plane/internal/portal/kbcontent >/dev/null; then
+            echo "::error::docs/kb and control-plane/internal/portal/kbcontent are out of sync."
+            echo "Re-sync with: cp docs/kb/*.md control-plane/internal/portal/kbcontent/"
+            diff -rq docs/kb control-plane/internal/portal/kbcontent || true
+            exit 1
+          fi
       - name: go build
         working-directory: control-plane
         run: go build ./...
