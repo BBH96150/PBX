@@ -483,6 +483,20 @@ func buildEmergencyActions(gatewayName, dialed, ext, address string) []dialplanA
 	}
 }
 
+// buildBlockedCallerActions is the pure builder for the inbound-screening reject
+// dialplan: a caller on the tenant's blocklist is hung up with CALL_REJECTED
+// before any routing. We do NOT answer the call (no billable connect, no media) —
+// the carrier hears a 603/reject and the call never rings an extension. The
+// x_blocked marker persists into the hangup event so the CDR pipeline can tag the
+// rejection. Pure function — no I/O — for unit tests.
+func buildBlockedCallerActions() []dialplanAction {
+	return []dialplanAction{
+		{App: "set", Data: "x_call_direction=inbound"},
+		{App: "set", Data: "x_blocked=true"},
+		{App: "hangup", Data: "CALL_REJECTED"},
+	}
+}
+
 // handleInboundPSTN serves the dialplan for calls arriving on the external
 // profile from a carrier gateway. destNum is the URI user-part FreeSWITCH
 // resolved as the destination, which is often the dialed DID — but for
@@ -510,6 +524,27 @@ func (h *Handler) handleInboundPSTN(w http.ResponseWriter, r *http.Request, dest
 			"dest", destNum, "to_user", r.FormValue("variable_sip_to_user"), "err", err)
 		writeHangup(w, "public", "UNALLOCATED_NUMBER")
 		return
+	}
+
+	// Inbound call screening: if this caller is on the owning tenant's blocklist,
+	// reject the call before any routing happens. INBOUND PSTN ONLY (this is the
+	// public context) — internal calls are never screened. Fail OPEN: any error
+	// resolving the tenant domain or running the blocklist lookup must NOT drop a
+	// legitimate call, so we only reject on a definitive blocked==true.
+	if caller := r.FormValue("Caller-Caller-ID-Number"); caller != "" {
+		if domain, derr := h.store.TenantDomainForDID(r.Context(), normalized); derr == nil && domain != "" {
+			if blocked, berr := h.store.IsCallerBlocked(r.Context(), domain, caller); berr != nil {
+				slog.Warn("blocklist lookup failed; failing open", "did", normalized, "caller", caller, "err", berr)
+			} else if blocked {
+				slog.Info("inbound call rejected by blocklist", "did", normalized, "caller", caller)
+				writeDialplan(w, dialplanData{
+					Context: "public",
+					Name:    "blocked-" + e164.DialDigits(normalized),
+					Actions: buildBlockedCallerActions(),
+				})
+				return
+			}
+		}
 	}
 
 	// Business hours: when the DID has a schedule that is CLOSED right now,

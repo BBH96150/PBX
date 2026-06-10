@@ -99,6 +99,21 @@ func (s *Server) listConferenceRooms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rooms)
 }
 
+// listBlockedNumbers returns a tenant's inbound call-screening blocklist.
+func (s *Server) listBlockedNumbers(w http.ResponseWriter, r *http.Request) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	nums, err := s.store.ListBlockedNumbersForTenant(r.Context(), tid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, nums)
+}
+
 // listExtensionPresence returns the live registration status (online/offline)
 // of every active extension in a tenant, derived from Kamailio's usrloc
 // location table.

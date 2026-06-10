@@ -1,0 +1,50 @@
+{{define "blocked_numbers_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Blocked numbers</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>Inbound call screening.</strong> Add a phone number here and incoming PSTN calls from that caller are rejected before they ring anyone.</p>
+  <ul style="margin:0.4rem 0 0">
+    <li>Matching is forgiving about the country-code prefix — <code>+15551234567</code>, <code>15551234567</code> and <code>5551234567</code> all block the same caller (last 10 digits).</li>
+    <li>The optional <strong>reason</strong> is a note for your own records (e.g. "spam", "robocaller").</li>
+  </ul>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Blocked numbers <span class="muted">({{len .Numbers}})</span></h2>
+  {{if .Numbers}}
+  <table>
+    <thead><tr><th>Number</th><th>Reason</th><th></th></tr></thead>
+    <tbody>
+      {{range .Numbers}}
+      <tr>
+        <td><code>{{.Number}}</code></td>
+        <td class="muted">{{if .Label}}{{.Label}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/blocked-numbers/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Unblock {{.Number}}?')">
+            <button type="submit" class="secondary btn-sm">Unblock</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No blocked numbers yet — add one below.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Block a number</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/blocked-numbers">
+    <div class="grid-2">
+      <label>Phone number<input name="number" placeholder="e.g. +15551234567" required></label>
+      <label>Reason <span class="muted">(optional)</span><input name="label" placeholder="e.g. spam"></label>
+    </div>
+    <button type="submit">Block number</button>
+  </form>
+</section>
+{{end}}

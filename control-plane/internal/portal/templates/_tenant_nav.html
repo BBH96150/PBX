@@ -3,7 +3,7 @@
 {{$numbers := or (eq $a "trunks") (eq $a "dids") (eq $a "outbound") (eq $a "schedules")}}
 {{$msg := or (eq $a "sms") (eq $a "contacts") (eq $a "paging")}}
 {{$calling := or (eq $a "conferences") (eq $a "park") (eq $a "e911") (eq $a "callbacks")}}
-{{$admin := or (eq $a "invites") (eq $a "sso") (eq $a "saml") (eq $a "webhooks") (eq $a "audit")}}
+{{$admin := or (eq $a "invites") (eq $a "sso") (eq $a "saml") (eq $a "webhooks") (eq $a "audit") (eq $a "blocked")}}
 <nav class="subnav">
   <a href="/admin/tenants/{{$t.ID}}"{{if eq $a "overview"}} class="active"{{end}}>Overview</a>
   <a href="/admin/tenants/{{$t.ID}}/live"{{if eq $a "live"}} class="active"{{end}}>Live</a>
@@ -44,6 +44,7 @@
     <summary{{if $admin}} class="active"{{end}}>Admin ▾</summary>
     <div class="subnav-menu">
       <a href="/admin/tenants/{{$t.ID}}/invites"{{if eq $a "invites"}} class="active"{{end}}>Team</a>
+      <a href="/admin/tenants/{{$t.ID}}/blocked-numbers"{{if eq $a "blocked"}} class="active"{{end}}>Blocked numbers</a>
       <a href="/admin/tenants/{{$t.ID}}/sso"{{if eq $a "sso"}} class="active"{{end}}>OIDC SSO</a>
       <a href="/admin/tenants/{{$t.ID}}/saml"{{if eq $a "saml"}} class="active"{{end}}>SAML</a>
       <a href="/admin/tenants/{{$t.ID}}/webhooks"{{if eq $a "webhooks"}} class="active"{{end}}>Webhooks</a>

@@ -88,6 +88,8 @@ tags:
     description: Meet-me dial-in conference bridges.
   - name: Presence
     description: Live extension registration status (online/offline).
+  - name: BlockedNumbers
+    description: Inbound call-screening blocklist (rejected callers).
   - name: Carriers
     description: PSTN carriers and per-tenant carrier (trunk) accounts.
   - name: Voicemail
@@ -1328,6 +1330,27 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/tenants/{tenantID}/blocked-numbers:
+    get:
+      tags: [BlockedNumbers]
+      summary: List blocked numbers
+      description: "Lists a tenant's inbound call-screening blocklist. Inbound PSTN calls from a blocked caller are rejected before they ring anyone. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Blocked numbers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedNumber"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /v1/tenants/{tenantID}/presence:
     get:
       tags: [Presence]
@@ -2435,6 +2458,26 @@ components:
           type: boolean
         enabled:
           type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BlockedNumber:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        label:
+          type: string
         created_at:
           type: string
           format: date-time
