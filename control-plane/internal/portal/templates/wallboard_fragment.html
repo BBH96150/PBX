@@ -1,0 +1,89 @@
+{{define "wallboard_fragment"}}
+<div class="tiles">
+  <div class="tile blue">
+    <div class="k">Active calls</div>
+    <div class="v">{{if or .FSUp (not .HasLive)}}{{.CallsN}}{{else}}—{{end}}</div>
+  </div>
+  <div class="tile amber">
+    <div class="k">Waiting in queue</div>
+    <div class="v">{{if .QueuesUp}}{{.TotalWait}}{{else}}—{{end}}</div>
+  </div>
+  <div class="tile green">
+    <div class="k">Agents available</div>
+    <div class="v">{{if .QueuesUp}}{{.TotalAvail}}{{else}}—{{end}}</div>
+  </div>
+  <div class="tile">
+    <div class="k">Extensions online</div>
+    <div class="v">{{if .PresenceUp}}{{.OnlineN}}<small>/{{.TotalExt}}</small>{{else}}—{{end}}</div>
+  </div>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <h2>Active calls</h2>
+    {{if not .HasLive}}
+      <div class="empty">Live monitoring not configured.</div>
+    {{else if not .FSUp}}
+      <div class="empty">Live state unavailable.</div>
+    {{else if not .Calls}}
+      <div class="empty">No calls in progress.</div>
+    {{else}}
+      <table>
+        <thead><tr><th>From</th><th>To</th><th>State</th><th class="num">Duration</th></tr></thead>
+        <tbody>
+        {{range .Calls}}
+          <tr>
+            <td>{{if .CallerName}}{{.CallerName}} {{end}}{{.CallerNum}}</td>
+            <td>{{.CalleeNum}}</td>
+            <td class="muted">{{.State}}</td>
+            <td class="num">{{if .Dur}}{{.Dur}}{{else}}—{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{end}}
+  </div>
+
+  <div class="panel">
+    <h2>Queues</h2>
+    {{if not .QueuesUp}}
+      <div class="empty">No live queue data.</div>
+    {{else}}
+      <table>
+        <thead><tr><th>Queue</th><th class="num">Waiting</th><th class="num">Longest</th><th class="num">Avail</th><th class="num">On call</th></tr></thead>
+        <tbody>
+        {{range .Queues}}
+          <tr>
+            <td>{{.Name}}{{if .Ext}} <span class="muted">· {{.Ext}}</span>{{end}}</td>
+            <td class="num">{{.Waiting}}</td>
+            <td class="num muted">{{if .Longest}}{{.Longest}}{{else}}—{{end}}</td>
+            <td class="num">{{.Avail}}</td>
+            <td class="num">{{.OnCall}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{end}}
+  </div>
+
+  <div class="panel">
+    <h2>Presence ({{if .PresenceUp}}{{.OnlineN}}/{{.TotalExt}} online{{else}}unavailable{{end}})</h2>
+    {{if not .PresenceUp}}
+      <div class="empty">Presence data unavailable.</div>
+    {{else if and (not .Online) (not .Offline)}}
+      <div class="empty">No active extensions.</div>
+    {{else}}
+      <table>
+        <tbody>
+        {{range .Online}}
+          <tr><td>{{.}}</td><td class="num"><span class="pill on">online</span></td></tr>
+        {{end}}
+        {{range .Offline}}
+          <tr class="dim"><td>{{.}}</td><td class="num"><span class="pill off">offline</span></td></tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{end}}
+  </div>
+</div>
+{{end}}

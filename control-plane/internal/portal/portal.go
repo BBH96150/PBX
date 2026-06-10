@@ -324,6 +324,9 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/live/fragment", s.liveFragment)
 		r.Post("/tenants/{tenantID}/live/hangup", s.liveHangup)
 		r.Post("/tenants/{tenantID}/live/eavesdrop", s.liveEavesdrop)
+		// Full-screen wallboard (active calls + queues + presence on one screen).
+		r.Get("/tenants/{tenantID}/wallboard", s.wallboard)
+		r.Get("/tenants/{tenantID}/wallboard/fragment", s.wallboardFragment)
 		r.Get("/tenants/{tenantID}/audit", s.auditList)
 		r.Get("/tenants/{tenantID}/audit.csv", s.tenantAuditCSV)
 		r.Get("/tenants/{tenantID}/api-keys", s.tenantAPIKeysList)
