@@ -60,23 +60,22 @@ type ExtensionPresence struct {
 // exists where location.username = e.sip_username AND location.domain =
 // sd.domain; otherwise "offline".
 //
-// The LEFT JOIN onto `location` plus an EXISTS-style boolean keeps the query
-// NULL-safe: an extension with no matching registration yields a false flag
-// (never a NULL scanned into a non-nullable Go string), so it reports offline.
-// Ordered by extension number.
+// An EXISTS subquery (not a JOIN) keeps it NULL-safe and one-row-per-extension
+// even with multiple registrations: no match → "offline" (never a NULL scanned
+// into a non-nullable Go string). Ordered by extension number.
 func (s *Store) ListExtensionPresenceForTenant(ctx context.Context, tenantID uuid.UUID) ([]ExtensionPresence, error) {
 	const q = `
 		SELECT e.id,
 		       e.extension,
 		       e.sip_username,
 		       COALESCE(e.display_name, ''),
-		       CASE WHEN l.username IS NOT NULL THEN 'online' ELSE 'offline' END AS status
+		       CASE WHEN EXISTS (
+		           SELECT 1 FROM location l
+		            WHERE l.username = e.sip_username AND l.domain = sd.domain
+		       ) THEN 'online' ELSE 'offline' END AS status
 		  FROM extensions e
 		  JOIN sip_domains sd ON sd.id = e.sip_domain_id
-		  LEFT JOIN location l
-		         ON l.username = e.sip_username AND l.domain = sd.domain
 		 WHERE e.tenant_id = $1 AND e.status = 'active'
-		 GROUP BY e.id, e.extension, e.sip_username, e.display_name, status
 		 ORDER BY e.extension`
 	rows, err := s.DB.Query(ctx, q, tenantID)
 	if err != nil {
