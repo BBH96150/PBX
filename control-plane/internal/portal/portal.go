@@ -338,6 +338,7 @@ func (s *Server) Router() http.Handler {
 		r.Post("/tenants/{tenantID}/paging/{id}/toggle", s.pagingToggle)
 		r.Post("/tenants/{tenantID}/paging/{id}/members", s.pagingMemberAdd)
 		r.Post("/tenants/{tenantID}/paging/{id}/members/{memberID}/delete", s.pagingMemberRemove)
+		r.Get("/tenants/{tenantID}/presence", s.presenceList)
 		r.Get("/tenants/{tenantID}/conferences", s.conferenceList)
 		r.Post("/tenants/{tenantID}/conferences", s.conferenceCreate)
 		r.Post("/tenants/{tenantID}/conferences/{id}/delete", s.conferenceDelete)

@@ -7,6 +7,7 @@
 <nav class="subnav">
   <a href="/admin/tenants/{{$t.ID}}"{{if eq $a "overview"}} class="active"{{end}}>Overview</a>
   <a href="/admin/tenants/{{$t.ID}}/live"{{if eq $a "live"}} class="active"{{end}}>Live</a>
+  <a href="/admin/tenants/{{$t.ID}}/presence"{{if eq $a "presence"}} class="active"{{end}}>Presence</a>
   <a href="/admin/tenants/{{$t.ID}}/cdrs"{{if eq $a "cdrs"}} class="active"{{end}}>Calls</a>
   <a href="/admin/tenants/{{$t.ID}}/reports"{{if eq $a "reports"}} class="active"{{end}}>Reports</a>
 

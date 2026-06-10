@@ -1,0 +1,38 @@
+{{define "presence_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Presence</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>Presence</strong> shows each extension's live status from its SIP registration: <span class="pill pill-ok">online</span> when a phone is registered to the platform, <span class="pill">offline</span> otherwise.</p>
+  <p class="muted" style="margin:0.4rem 0 0">Desk-phone Busy Lamp Field (BLF) — lighting a key when a colleague is on a call — is a separate effort that requires Kamailio presence/dialog-info config and is not reflected here yet.</p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Extensions <span class="muted">({{len .Presence}})</span></h2>
+  {{if .Presence}}
+  <table>
+    <thead><tr><th>Status</th><th>Name</th><th>Extension</th></tr></thead>
+    <tbody>
+      {{range .Presence}}
+      <tr>
+        <td>
+          {{if eq .Status "online"}}
+            <span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;background:#1f9d55;vertical-align:middle"></span>
+            <span class="pill pill-ok">online</span>
+          {{else}}
+            <span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;background:#bbb;vertical-align:middle"></span>
+            <span class="pill">offline</span>
+          {{end}}
+        </td>
+        <td>{{if .DisplayName}}<strong>{{.DisplayName}}</strong>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td><code>{{.Extension}}</code></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No active extensions yet.</p>{{end}}
+</section>
+{{end}}

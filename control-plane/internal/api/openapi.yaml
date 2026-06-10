@@ -86,6 +86,8 @@ tags:
     description: Paging / PTT (intercom) groups and rosters.
   - name: ConferenceRooms
     description: Meet-me dial-in conference bridges.
+  - name: Presence
+    description: Live extension registration status (online/offline).
   - name: Carriers
     description: PSTN carriers and per-tenant carrier (trunk) accounts.
   - name: Voicemail
@@ -1292,6 +1294,27 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/tenants/{tenantID}/presence:
+    get:
+      tags: [Presence]
+      summary: List extension presence
+      description: "Lists each active extension's live registration status (online/offline), derived from Kamailio's usrloc location table. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+      responses:
+        "200":
+          description: Extension presence.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExtensionPresence"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /v1/tenants/{tenantID}/park-lots:
     get:
       tags: [ParkLots]
@@ -2356,6 +2379,22 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    ExtensionPresence:
+      type: object
+      properties:
+        extension_id:
+          type: string
+          format: uuid
+        extension:
+          type: string
+        sip_username:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [online, offline]
 
     ParkLot:
       type: object

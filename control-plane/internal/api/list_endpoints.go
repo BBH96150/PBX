@@ -99,6 +99,23 @@ func (s *Server) listConferenceRooms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rooms)
 }
 
+// listExtensionPresence returns the live registration status (online/offline)
+// of every active extension in a tenant, derived from Kamailio's usrloc
+// location table.
+func (s *Server) listExtensionPresence(w http.ResponseWriter, r *http.Request) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	pres, err := s.store.ListExtensionPresenceForTenant(r.Context(), tid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, pres)
+}
+
 // listParkLots returns a tenant's call-park lots.
 func (s *Server) listParkLots(w http.ResponseWriter, r *http.Request) {
 	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
