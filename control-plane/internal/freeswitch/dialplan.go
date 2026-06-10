@@ -104,6 +104,22 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request, destNum,
 		return
 	}
 
+	// Queue callback ("keep your place in line"): *8<queue_extension> reaches the
+	// callback-request offer for that queue. Admins point a queue's overflow /
+	// timeout / an IVR option at *8<ext> (e.g. *8700 for queue 700). The caller
+	// is offered a callback; on opt-in we store a pending callback and hang up,
+	// otherwise we transfer them into the queue. Trigger chosen for being a pure
+	// dialed-destination form — no new channel-var plumbing — so it composes with
+	// existing IVR/overflow routing.
+	if tenantDomain != "" {
+		if qext, ok := strings.CutPrefix(destNum, "*8"); ok && qext != "" {
+			if q, qErr := h.store.LookupQueueByExtension(r.Context(), tenantDomain, qext); qErr == nil {
+				h.routeQueueCallback(w, r, q, destNum)
+				return
+			}
+		}
+	}
+
 	if e164.LooksLikeExternal(destNum) {
 		h.handleOutboundPSTN(w, r, destNum, tenantDomain)
 		return

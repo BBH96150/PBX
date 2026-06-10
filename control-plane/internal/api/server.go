@@ -148,6 +148,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/conference-rooms", s.listConferenceRooms)
 			r.Get("/park-lots", s.listParkLots)
 			r.Get("/e911-locations", s.listE911Locations)
+			r.Get("/queue-callbacks", s.listQueueCallbacks)
 			r.Get("/devices", s.listDevices)
 		})
 	})

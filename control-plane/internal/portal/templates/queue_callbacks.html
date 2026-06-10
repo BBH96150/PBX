@@ -1,0 +1,58 @@
+{{define "queue_callbacks_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Queue callbacks</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>Queue callbacks</strong> let a caller keep their place in line: instead of holding, they request a callback and the system calls them back and drops them into the queue to reach the next agent.</p>
+  <ul style="margin:0.4rem 0 0">
+    <li>Callers opt in by reaching <code>*8&lt;queue&nbsp;number&gt;</code> (point a queue's overflow / timeout or an IVR option at it).</li>
+    <li><strong>Call now</strong> dials the caller back through this tenant's trunk and transfers them into the queue. Auto-dial also runs in the background (every ~20s, up to 3 attempts).</li>
+  </ul>
+  {{if not .DialReady}}<p class="muted" style="margin:0.4rem 0 0">Calling back is not configured on this server (no originator / SIP routing target), so “Call now” is disabled.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Callbacks <span class="muted">({{len .Callbacks}})</span></h2>
+  {{if .Callbacks}}
+  <table>
+    <thead><tr><th>Caller</th><th>Queue</th><th>Status</th><th>Attempts</th><th>Requested</th><th></th></tr></thead>
+    <tbody>
+      {{range .Callbacks}}
+      <tr>
+        <td><strong>{{.CallerNumber}}</strong>{{if .CallerName}} <span class="muted">{{.CallerName}}</span>{{end}}</td>
+        <td>{{if .QueueExtension}}<code>{{.QueueExtension}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          {{if eq .Status "pending"}}<span class="pill">pending</span>
+          {{else if eq .Status "dialing"}}<span class="pill">dialing</span>
+          {{else if eq .Status "connected"}}<span class="pill pill-ok">connected</span>
+          {{else if eq .Status "failed"}}<span class="pill pill-warn">failed</span>
+          {{else}}<span class="muted">{{.Status}}</span>{{end}}
+        </td>
+        <td>{{.Attempts}}</td>
+        <td class="muted">{{.RequestedAt.Format "Jan 2 15:04"}}</td>
+        <td>
+          <div class="inline" style="margin:0;gap:0.4rem">
+            {{if and $.DialReady (or (eq .Status "pending") (eq .Status "failed"))}}
+            <form method="post" action="/admin/tenants/{{$t.ID}}/callbacks/{{.ID}}/dial" style="margin:0">
+              <button type="submit" class="btn-sm">Call now</button>
+            </form>
+            {{end}}
+            {{if or (eq .Status "pending") (eq .Status "failed") (eq .Status "dialing")}}
+            <form method="post" action="/admin/tenants/{{$t.ID}}/callbacks/{{.ID}}/cancel" style="margin:0" onsubmit="return confirm('Cancel this callback?')">
+              <button type="submit" class="secondary btn-sm">Cancel</button>
+            </form>
+            {{end}}
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No callbacks yet. Callers who reach <code>*8&lt;queue number&gt;</code> and opt in will appear here.</p>{{end}}
+</section>
+{{end}}

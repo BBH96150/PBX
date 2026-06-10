@@ -139,6 +139,43 @@ func TestDialplanRoutesToQueue(t *testing.T) {
 	}
 }
 
+func TestDialplanRoutesQueueCallbackOffer(t *testing.T) {
+	s := dpStore(t)
+	ctx := context.Background()
+	tid, domain, _ := dpSeed(t, s)
+
+	q, err := s.CreateQueue(ctx, store.CreateQueueInput{TenantID: tid, Extension: "700", Name: "Support"})
+	if err != nil {
+		t.Fatalf("CreateQueue: %v", err)
+	}
+
+	h := NewHandler(s, "kam.example:5060", nil)
+	// *8<queue extension> reaches the callback offer for queue 700.
+	code, xml := dialplanXMLFromCaller(t, h, "*8700", domain, "+14155550123")
+	if code != http.StatusOK {
+		t.Fatalf("callback offer dialplan status = %d", code)
+	}
+	for _, want := range []string{
+		`application="play_and_get_digits"`, // the "press 1" offer
+		"x_queue_callback_offer=true",
+		"x_queue_id=" + q.ID.String(),
+		"700 XML default", // non-opt-in transfers back into the queue
+	} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("callback offer dialplan missing %q\n%s", want, xml)
+		}
+	}
+
+	// Reaching the offer recorded a pending callback for the caller.
+	pending, err := s.ListPendingQueueCallbacks(ctx, tid)
+	if err != nil {
+		t.Fatalf("ListPendingQueueCallbacks: %v", err)
+	}
+	if len(pending) != 1 || pending[0].CallerNumber != "+14155550123" {
+		t.Fatalf("expected 1 pending callback for the caller, got %+v", pending)
+	}
+}
+
 func TestDialplanRoutesToIVR(t *testing.T) {
 	s := dpStore(t)
 	ctx := context.Background()

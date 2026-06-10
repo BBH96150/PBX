@@ -78,6 +78,8 @@ tags:
     description: Ring groups and their member extensions.
   - name: Queues
     description: Call-center queues (mod_callcenter) and their agents.
+  - name: QueueCallbacks
+    description: Queue callbacks ("keep your place in line") and their lifecycle.
   - name: IVRs
     description: Auto-attendant menus and their digit options.
   - name: PagingGroups
@@ -1332,6 +1334,34 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/tenants/{tenantID}/queue-callbacks:
+    get:
+      tags: [QueueCallbacks]
+      summary: List queue callbacks
+      description: "Lists a tenant's queue callbacks (\"keep your place in line\" requests). An optional `status` query filters to one of pending/dialing/connected/failed/cancelled. Required scope: **authenticated**."
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+        - name: status
+          in: query
+          required: false
+          description: Filter to a single callback status.
+          schema:
+            type: string
+            enum: [pending, dialing, connected, failed, cancelled]
+      responses:
+        "200":
+          description: Queue callbacks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QueueCallback"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   # ---------------------------------------------------------------------------
   # Carriers
   # ---------------------------------------------------------------------------
@@ -2384,6 +2414,43 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    QueueCallback:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        queue_id:
+          type: string
+          format: uuid
+        caller_number:
+          type: string
+        caller_name:
+          type: string
+        status:
+          type: string
+          enum: [pending, dialing, connected, failed, cancelled]
+        attempts:
+          type: integer
+        requested_at:
+          type: string
+          format: date-time
+        last_attempt_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        queue_extension:
+          type: string
 
     Carrier:
       type: object

@@ -2,7 +2,7 @@
 {{$t := .Tenant}}{{$a := .NavActive}}
 {{$numbers := or (eq $a "trunks") (eq $a "dids") (eq $a "outbound") (eq $a "schedules")}}
 {{$msg := or (eq $a "sms") (eq $a "contacts") (eq $a "paging")}}
-{{$calling := or (eq $a "conferences") (eq $a "park") (eq $a "e911")}}
+{{$calling := or (eq $a "conferences") (eq $a "park") (eq $a "e911") (eq $a "callbacks")}}
 {{$admin := or (eq $a "invites") (eq $a "sso") (eq $a "saml") (eq $a "webhooks") (eq $a "audit")}}
 <nav class="subnav">
   <a href="/admin/tenants/{{$t.ID}}"{{if eq $a "overview"}} class="active"{{end}}>Overview</a>
@@ -35,6 +35,7 @@
       <a href="/admin/tenants/{{$t.ID}}/conferences"{{if eq $a "conferences"}} class="active"{{end}}>Conferences</a>
       <a href="/admin/tenants/{{$t.ID}}/park"{{if eq $a "park"}} class="active"{{end}}>Call park</a>
       <a href="/admin/tenants/{{$t.ID}}/e911"{{if eq $a "e911"}} class="active"{{end}}>E911 / Locations</a>
+      <a href="/admin/tenants/{{$t.ID}}/callbacks"{{if eq $a "callbacks"}} class="active"{{end}}>Queue callbacks</a>
     </div>
   </details>
 

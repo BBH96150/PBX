@@ -224,7 +224,7 @@ func main() {
 	digestSender := digest.New(st, mailer, 13)
 
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
 
 	go func() {
 		defer wg.Done()
@@ -262,6 +262,13 @@ func main() {
 	go func() {
 		defer wg.Done()
 		digestSender.Run(ctx)
+	}()
+
+	// Queue-callback dialer: every ~20s pop pending "keep your place in line"
+	// callbacks and dial them back into their queue (capped at 3 attempts).
+	go func() {
+		defer wg.Done()
+		portalSrv.RunCallbackDialer(ctx, 20*time.Second)
 	}()
 
 	_ = gwProvisioner // keep the variable in scope for the adapter; satisfied here.
