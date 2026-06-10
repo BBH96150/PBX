@@ -77,8 +77,10 @@ func (s *Server) meExtension(w http.ResponseWriter, r *http.Request) {
 	}
 	vmBox, _ := s.store.GetVoicemailBoxByExtensionID(r.Context(), ext.ID)
 	var vmMsgs []store.VoicemailMessage
+	var vmTranscripts map[uuid.UUID]string
 	if vmBox != nil {
 		vmMsgs, _ = s.store.ListVoicemailMessagesForBox(r.Context(), vmBox.ID)
+		vmTranscripts, _ = s.store.ListVoicemailTranscriptsForBox(r.Context(), vmBox.ID)
 	}
 	recent, _ := s.store.ListCDRsFilteredForTenant(r.Context(), ext.TenantID, store.CDRFilter{
 		Search: ext.Extension,
@@ -89,6 +91,7 @@ func (s *Server) meExtension(w http.ResponseWriter, r *http.Request) {
 		"Extension":     ext,
 		"VoicemailBox":  vmBox,
 		"VoicemailMsgs": vmMsgs,
+		"VMTranscripts": vmTranscripts,
 		"RecentCalls":   recent,
 	})
 }

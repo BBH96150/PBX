@@ -223,6 +223,100 @@ func (s *Store) DeleteVoicemailMessageForTenant(ctx context.Context, tenantID, m
 	return nil
 }
 
+// PendingTranscriptMessage is a voicemail message awaiting transcription: it
+// has audio on disk and no transcript yet.
+type PendingTranscriptMessage struct {
+	ID        uuid.UUID
+	TenantID  uuid.UUID
+	AudioPath string
+}
+
+// ListVoicemailMessagesPendingTranscript returns non-deleted messages that have
+// an audio file and no transcript yet, newest first. NULL-safe: the WHERE
+// guarantees audio_path is non-empty, and only the three needed columns are
+// selected (transcript itself is never scanned here — we just test IS NULL).
+func (s *Store) ListVoicemailMessagesPendingTranscript(ctx context.Context, limit int) ([]PendingTranscriptMessage, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	const q = `
+		SELECT m.id, b.tenant_id, m.audio_path
+		  FROM voicemail_messages m
+		  JOIN voicemail_boxes b ON b.id = m.box_id
+		 WHERE m.transcript IS NULL
+		   AND m.audio_path IS NOT NULL AND m.audio_path <> ''
+		   AND m.status <> 'deleted'
+		 ORDER BY m.received_at DESC
+		 LIMIT $1`
+	rows, err := s.DB.Query(ctx, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PendingTranscriptMessage
+	for rows.Next() {
+		var p PendingTranscriptMessage
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.AudioPath); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SetVoicemailTranscript stores the transcript for one message. NULLIF maps an
+// empty transcript back to NULL so the pending query won't re-skip it forever
+// (it'll retry next tick).
+func (s *Store) SetVoicemailTranscript(ctx context.Context, msgID uuid.UUID, transcript string) error {
+	_, err := s.DB.Exec(ctx,
+		`UPDATE voicemail_messages SET transcript = NULLIF($2,'') WHERE id = $1`,
+		msgID, transcript)
+	return err
+}
+
+// GetVoicemailTranscript returns the stored transcript for a message (tenant-
+// scoped), or "" when none. Read via this dedicated getter so the main
+// VoicemailMessage scan paths stay untouched.
+func (s *Store) GetVoicemailTranscript(ctx context.Context, tenantID, msgID uuid.UUID) (string, error) {
+	const q = `
+		SELECT COALESCE(m.transcript,'')
+		  FROM voicemail_messages m
+		  JOIN voicemail_boxes b ON b.id = m.box_id
+		 WHERE m.id = $1 AND b.tenant_id = $2`
+	var transcript string
+	err := s.DB.QueryRow(ctx, q, msgID, tenantID).Scan(&transcript)
+	if err != nil {
+		return "", err
+	}
+	return transcript, nil
+}
+
+// ListVoicemailTranscriptsForBox returns a map of message id → transcript for
+// the non-empty transcripts in a box. The inbox view uses it to annotate the
+// message list without changing the existing ListVoicemailMessagesForBox scan.
+func (s *Store) ListVoicemailTranscriptsForBox(ctx context.Context, boxID uuid.UUID) (map[uuid.UUID]string, error) {
+	const q = `
+		SELECT id, transcript
+		  FROM voicemail_messages
+		 WHERE box_id = $1 AND transcript IS NOT NULL AND transcript <> ''
+		   AND status <> 'deleted'`
+	rows, err := s.DB.Query(ctx, q, boxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]string{}
+	for rows.Next() {
+		var id uuid.UUID
+		var transcript string
+		if err := rows.Scan(&id, &transcript); err != nil {
+			return nil, err
+		}
+		out[id] = transcript
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetVoicemailBoxByExtensionID(ctx context.Context, extID uuid.UUID) (*VoicemailBox, error) {
 	const q = `
 		SELECT id, tenant_id, extension_id, pin, COALESCE(email::text,''),

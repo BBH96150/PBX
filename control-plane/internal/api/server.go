@@ -134,6 +134,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/extensions", s.createExtension)
 			r.Get("/extensions", s.listExtensions)
 			r.Get("/cdrs", s.listCDRs)
+			r.Get("/cdrs/{cdrID}/insight", s.getCDRInsight)
 			r.Get("/contacts", s.listContacts)
 			r.Post("/contacts", RequireScope("write", s.createContact))
 			r.Delete("/contacts/{contactID}", RequireScope("write", s.deleteContact))

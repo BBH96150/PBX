@@ -36,6 +36,7 @@
     </thead>
     <tbody>
       {{range .CDRs}}
+      {{$ci := insightFor $.Insights .ID}}
       <tr>
         <td class="muted">{{.StartedAt.Format "Jan 2, 15:04:05"}}</td>
         <td>{{if eq .Direction "inbound"}}<span class="pill pill-info">↙ in</span>{{else if eq .Direction "outbound"}}<span class="pill pill-ok">↗ out</span>{{else}}<span class="pill">↔ internal</span>{{end}}</td>
@@ -63,6 +64,27 @@
           </form>
         </td>
       </tr>
+      {{if $ci}}
+      <tr class="ai-insight-row">
+        <td colspan="10" style="padding-top:0">
+          <details style="margin:0.2rem 0 0.4rem">
+            <summary style="cursor:pointer;font-size:0.85rem">🧠 AI summary{{if $ci.Summary}} — <span class="muted">{{$ci.Summary}}</span>{{end}}</summary>
+            <div style="margin:0.4rem 0 0.2rem;font-size:0.85rem">
+              {{if $ci.ActionItems}}
+              <strong>Action items</strong>
+              <ul style="margin:0.2rem 0 0.4rem">
+                {{range $ci.ActionItems}}<li>{{.}}</li>{{end}}
+              </ul>
+              {{end}}
+              {{if $ci.Transcript}}
+              <strong>Transcript</strong>
+              <p class="muted" style="white-space:pre-wrap;margin:0.2rem 0 0">{{$ci.Transcript}}</p>
+              {{end}}
+            </div>
+          </details>
+        </td>
+      </tr>
+      {{end}}
       {{end}}
     </tbody>
   </table>

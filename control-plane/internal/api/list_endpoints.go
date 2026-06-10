@@ -162,6 +162,28 @@ func (s *Server) listQueueCallbacks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cbs)
 }
 
+// getCDRInsight returns the AI call insight (transcript + summary + action
+// items) for one CDR. 404 when the call has no insight row yet (e.g. AI
+// disabled, or not yet processed). Tenant-scoped.
+func (s *Server) getCDRInsight(w http.ResponseWriter, r *http.Request) {
+	tid, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	cdrID, err := uuid.Parse(chi.URLParam(r, "cdrID"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid cdr id")
+		return
+	}
+	ci, err := s.store.GetCallInsightForCDR(r.Context(), tid, cdrID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "no insight for this call")
+		return
+	}
+	writeJSON(w, http.StatusOK, ci)
+}
+
 // listVoicemailMessages returns an extension's voicemail messages (metadata
 // only — the audio path is never serialized).
 func (s *Server) listVoicemailMessages(w http.ResponseWriter, r *http.Request) {

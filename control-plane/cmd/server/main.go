@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tendpos/sip-platform/control-plane/internal/ai"
 	"github.com/tendpos/sip-platform/control-plane/internal/api"
 	"github.com/tendpos/sip-platform/control-plane/internal/audit"
 	"github.com/tendpos/sip-platform/control-plane/internal/config"
@@ -223,8 +224,18 @@ func main() {
 	trunkMon := freeswitch.NewTrunkMonitor(st, gwProvisionerCore, mailer, webhookDispatcher, cfg.AlertEmail, 60*time.Second)
 	digestSender := digest.New(st, mailer, 13)
 
+	// AI insights pipeline. Config-gated like 2FA/SAML: with no provider/keys
+	// the Service is disabled and the worker logs once + returns (no behavior
+	// change). Enabled only when AI_TRANSCRIPTION_PROVIDER + its key are set.
+	aiSvc := ai.New(ai.Config{
+		TranscriptionProvider: cfg.AITranscriptionProvider,
+		DeepgramAPIKey:        cfg.DeepgramAPIKey,
+		AnthropicAPIKey:       cfg.AnthropicAPIKey,
+	})
+	insightsWorker := ai.NewWorker(aiSvc, st, webhookDispatcher, cfg.RecordingStorageRoot, cfg.VoicemailStorageRoot)
+
 	var wg sync.WaitGroup
-	wg.Add(6)
+	wg.Add(7)
 
 	go func() {
 		defer wg.Done()
@@ -269,6 +280,12 @@ func main() {
 	go func() {
 		defer wg.Done()
 		portalSrv.RunCallbackDialer(ctx, 20*time.Second)
+	}()
+
+	// AI insights pipeline worker (inert unless configured).
+	go func() {
+		defer wg.Done()
+		insightsWorker.Run(ctx, 60*time.Second)
 	}()
 
 	_ = gwProvisioner // keep the variable in scope for the adapter; satisfied here.

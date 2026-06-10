@@ -72,7 +72,9 @@ signing secret, and an optional event subscription list (empty = all events).
 The portal shows each endpoint's last delivery status.
 
 **Events:** `call.completed`, `trunk.down`, `trunk.up`, `voicemail.new`,
-`emergency.dialed` (plus `test.ping` from the Send-test button).
+`emergency.dialed`, `call.summarized`, `voicemail.transcribed` (plus
+`test.ping` from the Send-test button). The last two are only emitted when the
+optional AI insights feature is configured.
 
 **Request:** `POST` with JSON body:
 
@@ -104,3 +106,5 @@ if not constant_time_equals(expected, header["X-Webhook-Signature"]):
 - **trunk.down / trunk.up** — `trunk, carrier, gateway, prev_state, state`
 - **voicemail.new** — `extension_id, user, domain, caller_id_num, caller_id_name, duration_sec`
 - **emergency.dialed** — `dialed, extension, caller_id_num, address` (Kari's Law: fired when an extension dials 911/933)
+- **call.summarized** — `call_uuid, summary, action_items, has_transcript` (AI insights pipeline finished a call recording)
+- **voicemail.transcribed** — `message_id, transcript` (AI insights pipeline transcribed a voicemail)

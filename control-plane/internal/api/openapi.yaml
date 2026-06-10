@@ -720,6 +720,40 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/tenants/{tenantID}/cdrs/{cdrID}/insight:
+    get:
+      tags: [CDRs]
+      summary: Get the AI insight for a call
+      description: |
+        Returns the AI-generated transcript, summary, and action items for one
+        call (resolved from the CDR's recording). Produced by the optional AI
+        insights pipeline, which is DISABLED unless an operator configures a
+        transcription provider + keys (`AI_TRANSCRIPTION_PROVIDER`,
+        `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`). Returns **404** when the call
+        has no insight (AI disabled, no recording, or not yet processed).
+        Required scope: **authenticated**.
+      parameters:
+        - $ref: "#/components/parameters/TenantID"
+        - name: cdrID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The call insight.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallInsight"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ---------------------------------------------------------------------------
   # Contacts
   # ---------------------------------------------------------------------------
@@ -1876,6 +1910,34 @@ components:
             type: string
           nullable: true
 
+    CallInsight:
+      type: object
+      description: |
+        AI-generated insight for one call: the transcript, a short summary, and
+        extracted action items. Produced by the optional, config-gated AI
+        insights pipeline.
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        call_uuid:
+          type: string
+        transcript:
+          type: string
+        summary:
+          type: string
+        action_items:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
     Contact:
       type: object
       description: |
@@ -2993,6 +3055,36 @@ x-webhook-events:
             description: >-
               The single-line dispatchable location assigned to the extension
               (empty if none was assigned).
+    call.summarized:
+      summary: >-
+        The AI insights pipeline transcribed a call recording and generated a
+        summary + action items. Only fired when the optional AI feature is
+        configured (AI_TRANSCRIPTION_PROVIDER + keys).
+      payload:
+        type: object
+        properties:
+          call_uuid:
+            type: string
+          summary:
+            type: string
+          action_items:
+            type: array
+            items:
+              type: string
+          has_transcript:
+            type: boolean
+    voicemail.transcribed:
+      summary: >-
+        The AI insights pipeline transcribed a voicemail message. Only fired
+        when the optional AI feature is configured.
+      payload:
+        type: object
+        properties:
+          message_id:
+            type: string
+            format: uuid
+          transcript:
+            type: string
     test.ping:
       summary: Test delivery fired from the portal's "Send test" button.
       payload:

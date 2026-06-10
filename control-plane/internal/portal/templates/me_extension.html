@@ -46,6 +46,14 @@
           </form>
         </td>
       </tr>
+      {{with index $.VMTranscripts .ID}}
+      <tr><td colspan="5" style="padding-top:0">
+        <details style="margin:0">
+          <summary style="cursor:pointer;font-size:0.85rem">🧠 Transcript</summary>
+          <p class="muted" style="white-space:pre-wrap;margin:0.3rem 0 0;font-size:0.85rem">{{.}}</p>
+        </details>
+      </td></tr>
+      {{end}}
       {{end}}
     </tbody>
   </table>

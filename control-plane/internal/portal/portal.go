@@ -149,6 +149,7 @@ func New(s *store.Store, opts Options) (*Server, error) {
 		"deref":       funcs["deref"],
 		"dyntemplate": srv.dyntemplate,
 		"humandur":    humandur,
+		"insightFor":  insightFor,
 	})
 	if _, err := t.ParseFS(tmplFS, "templates/*.html"); err != nil {
 		return nil, err
@@ -1144,9 +1145,13 @@ func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := cdrFilterFromQuery(q, 200)
 	cdrs, _ := s.store.ListCDRsFilteredForTenant(r.Context(), tid, filter)
+	// AI insights (if any) keyed by CDR id — empty map when the feature is off
+	// or nothing has been processed, so the template shows nothing extra.
+	insights, _ := s.store.ListCallInsightsByCDRForTenant(r.Context(), tid, filter.Limit)
 	s.renderLayout(w, r, tenant.Name+" · CDRs", "cdrs", map[string]any{
 		"Tenant":    tenant,
 		"CDRs":      cdrs,
+		"Insights":  insights,
 		"Direction": filter.Direction,
 		"Search":    filter.Search,
 		"Since":     q.Get("since"),
@@ -1344,8 +1349,11 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 	tenant, _ := s.store.GetTenant(r.Context(), ext.TenantID)
 	vmBox, _ := s.store.GetVoicemailBoxByExtensionID(r.Context(), id)
 	var vmMessages []store.VoicemailMessage
+	var vmTranscripts map[uuid.UUID]string
 	if vmBox != nil {
 		vmMessages, _ = s.store.ListVoicemailMessagesForBox(r.Context(), vmBox.ID)
+		// AI transcripts (empty map when feature off / none yet).
+		vmTranscripts, _ = s.store.ListVoicemailTranscriptsForBox(r.Context(), vmBox.ID)
 	}
 
 	// Phase 5.1: SIP credentials section. Plaintext password is shown only
@@ -1369,6 +1377,7 @@ func (s *Server) extensionDetail(w http.ResponseWriter, r *http.Request) {
 		"Extension":      ext,
 		"VoicemailBox":   vmBox,
 		"VoicemailMsgs":  vmMessages,
+		"VMTranscripts":  vmTranscripts,
 		"SIPDomain":      domain,
 		"SIPServerHost":  host,
 		"SIPServerPort":  s.sipPublicPort,
@@ -1797,6 +1806,19 @@ func humandur(v any) string {
 	default:
 		return fmt.Sprintf("%ds", sec)
 	}
+}
+
+// insightFor looks up the AI call insight for a CDR id in the map passed to the
+// CDR template. Returns nil when absent (AI off / not yet processed) so the
+// template can `{{with insightFor .Insights .ID}}` and render nothing extra.
+func insightFor(m map[uuid.UUID]store.CallInsight, id uuid.UUID) *store.CallInsight {
+	if m == nil {
+		return nil
+	}
+	if ci, ok := m[id]; ok {
+		return &ci
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

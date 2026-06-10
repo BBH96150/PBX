@@ -95,6 +95,18 @@ type Config struct {
 	// the platform's public IP so Linphone / desk phones resolve it
 	// without per-tenant /etc/hosts hacks.
 	SIPDomainSuffix string
+
+	// AI call summaries + voicemail transcription. Ships DISABLED: the
+	// insights pipeline is inert (logs once + returns) unless a provider +
+	// its key are set, and only summarizes when ANTHROPIC_API_KEY is also
+	// set. Mirrors the 2FA/SAML "no key → feature off" gating. No call/
+	// voicemail behavior changes until configured.
+	//   AITranscriptionProvider: "deepgram" | "" (empty = transcription off)
+	//   DeepgramAPIKey:          key for the Deepgram speech-to-text API
+	//   AnthropicAPIKey:         key for the Anthropic Messages API (summaries)
+	AITranscriptionProvider string
+	DeepgramAPIKey          string
+	AnthropicAPIKey         string
 }
 
 func FromEnv() (*Config, error) {
@@ -147,6 +159,10 @@ func FromEnv() (*Config, error) {
 	c.VoicemailStorageRoot = envOr("VOICEMAIL_STORAGE_ROOT", "/var/lib/freeswitch/storage")
 	c.RecordingStorageRoot = envOr("RECORDING_STORAGE_ROOT", "/var/lib/freeswitch/recordings")
 	c.SIPDomainSuffix = strings.TrimPrefix(os.Getenv("SIP_DOMAIN_SUFFIX"), ".")
+
+	c.AITranscriptionProvider = strings.ToLower(strings.TrimSpace(os.Getenv("AI_TRANSCRIPTION_PROVIDER")))
+	c.DeepgramAPIKey = os.Getenv("DEEPGRAM_API_KEY")
+	c.AnthropicAPIKey = os.Getenv("ANTHROPIC_API_KEY")
 
 	c.SMTPHost = os.Getenv("SMTP_HOST")
 	c.SMTPUsername = os.Getenv("SMTP_USERNAME")
