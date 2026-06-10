@@ -27,7 +27,11 @@
         <td>{{.Company}}</td>
         <td class="muted">{{.Notes}}</td>
         <td>
-          <form method="post" action="/admin/tenants/{{$t.ID}}/contacts/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Remove {{.Name}} from the directory?')">
+          <form method="post" action="/admin/tenants/{{$t.ID}}/click-to-dial" class="inline" style="margin:0;display:inline">
+            <input type="hidden" name="to" value="{{.Number}}">
+            <button type="submit" class="btn-sm" title="Ring my phone, then dial {{.Name}}">📞 Call</button>
+          </form>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/contacts/{{.ID}}/delete" style="margin:0;display:inline" onsubmit="return confirm('Remove {{.Name}} from the directory?')">
             <button type="submit" class="secondary btn-sm">Remove</button>
           </form>
         </td>

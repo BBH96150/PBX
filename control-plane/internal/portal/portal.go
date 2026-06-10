@@ -333,6 +333,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/contacts.csv", s.contactsCSV)
 		r.Post("/tenants/{tenantID}/contacts", s.contactCreate)
 		r.Post("/tenants/{tenantID}/contacts/{id}/delete", s.contactDelete)
+		r.Post("/tenants/{tenantID}/click-to-dial", s.clickToDial)
 		r.Get("/tenants/{tenantID}/paging", s.pagingList)
 		r.Post("/tenants/{tenantID}/paging", s.pagingCreate)
 		r.Post("/tenants/{tenantID}/paging/{id}/delete", s.pagingDelete)

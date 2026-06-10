@@ -47,6 +47,18 @@
 </section>
 
 <section class="card" style="margin-top:1rem">
+  <h2>Click to dial</h2>
+  <p class="muted" style="font-size:0.9rem">
+    Ring this extension's phone first; when you answer, the call dials the number you enter.
+  </p>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/click-to-dial" class="inline">
+    <input type="hidden" name="from_extension_id" value="{{$e.ID}}">
+    <label>Number<input name="to" placeholder="+14155551234 or extension" required></label>
+    <button type="submit">📞 Call</button>
+  </form>
+</section>
+
+<section class="card" style="margin-top:1rem">
   <h2>SIP credentials for a softphone or desk phone</h2>
   <p class="muted" style="font-size:0.9rem">
     Use these in any SIP client (Linphone, Bria, Zoiper, baresip, or a hardware phone) to register this extension.
