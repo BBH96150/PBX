@@ -322,6 +322,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/live", s.liveDashboard)
 		r.Get("/tenants/{tenantID}/live/fragment", s.liveFragment)
 		r.Post("/tenants/{tenantID}/live/hangup", s.liveHangup)
+		r.Post("/tenants/{tenantID}/live/eavesdrop", s.liveEavesdrop)
 		r.Get("/tenants/{tenantID}/audit", s.auditList)
 		r.Get("/tenants/{tenantID}/audit.csv", s.tenantAuditCSV)
 		r.Get("/tenants/{tenantID}/api-keys", s.tenantAPIKeysList)

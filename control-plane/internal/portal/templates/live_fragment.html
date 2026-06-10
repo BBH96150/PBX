@@ -40,10 +40,29 @@
         <td>{{if eq .State "ACTIVE"}}<span class="pill pill-ok">active</span>{{else if or (eq .State "RINGING") (eq .State "EARLY")}}<span class="pill pill-warn">{{.State}}</span>{{else}}<span class="pill">{{.State}}</span>{{end}}</td>
         <td>{{if .Dur}}{{.Dur}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td>
-          <form hx-post="/admin/tenants/{{$tid}}/live/hangup" hx-target="#live-panel" hx-swap="innerHTML" style="margin:0" onsubmit="return confirm('Hang up this call?')">
-            <input type="hidden" name="uuid" value="{{.KillUUID}}">
-            <button type="submit" class="btn-sm btn-danger">Hang up</button>
-          </form>
+          <div class="row" style="gap:0.25rem;justify-content:flex-end;flex-wrap:wrap;margin:0">
+            {{if eq .State "ACTIVE"}}
+            <form method="post" action="/admin/tenants/{{$tid}}/live/eavesdrop" style="margin:0">
+              <input type="hidden" name="uuid" value="{{.KillUUID}}">
+              <input type="hidden" name="mode" value="monitor">
+              <button type="submit" class="btn-sm" title="Silently listen to this call">🎧 Monitor</button>
+            </form>
+            <form method="post" action="/admin/tenants/{{$tid}}/live/eavesdrop" style="margin:0">
+              <input type="hidden" name="uuid" value="{{.KillUUID}}">
+              <input type="hidden" name="mode" value="whisper">
+              <button type="submit" class="btn-sm" title="Coach the agent (caller can't hear you)">🗣 Whisper</button>
+            </form>
+            <form method="post" action="/admin/tenants/{{$tid}}/live/eavesdrop" style="margin:0">
+              <input type="hidden" name="uuid" value="{{.KillUUID}}">
+              <input type="hidden" name="mode" value="barge">
+              <button type="submit" class="btn-sm" title="Join the call (both sides hear you)">📢 Barge</button>
+            </form>
+            {{end}}
+            <form hx-post="/admin/tenants/{{$tid}}/live/hangup" hx-target="#live-panel" hx-swap="innerHTML" style="margin:0" onsubmit="return confirm('Hang up this call?')">
+              <input type="hidden" name="uuid" value="{{.KillUUID}}">
+              <button type="submit" class="btn-sm btn-danger">Hang up</button>
+            </form>
+          </div>
         </td>
       </tr>
       {{end}}
