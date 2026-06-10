@@ -30,12 +30,25 @@ func TestIntegrationListExtensionPresence(t *testing.T) {
 	ctx := context.Background()
 	ten := makeTenant(t, s)
 
-	// Two active extensions under (distinct) sip_domains.
-	online, onlineDomain := makeExtension(t, s, ten, "1001")
-	offline, _ := makeExtension(t, s, ten, "1002")
+	// Two active extensions under ONE sip_domain (a tenant may only have one
+	// primary domain — makeExtension creates a fresh primary each call, so we
+	// build the domain + both extensions explicitly here).
+	domain := "pr-" + uuid.NewString()[:8] + ".sip.local"
+	sd, err := s.CreateSIPDomain(ctx, ten.ID, domain, true)
+	if err != nil {
+		t.Fatalf("CreateSIPDomain: %v", err)
+	}
+	online, err := s.CreateExtension(ctx, ten.ID, sd.ID, "1001", "1001", "pw", "Online User")
+	if err != nil {
+		t.Fatalf("CreateExtension 1001: %v", err)
+	}
+	offline, err := s.CreateExtension(ctx, ten.ID, sd.ID, "1002", "1002", "pw", "Offline User")
+	if err != nil {
+		t.Fatalf("CreateExtension 1002: %v", err)
+	}
 
 	// Register only the first extension by inserting a matching location row.
-	insertLocationRow(t, s, online.SIPUsername, onlineDomain)
+	insertLocationRow(t, s, online.SIPUsername, domain)
 
 	pres, err := s.ListExtensionPresenceForTenant(ctx, ten.ID)
 	if err != nil {
