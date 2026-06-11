@@ -1,0 +1,33 @@
+{{define "readiness_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Readiness</span></h1>
+  <span class="muted" style="font-size:0.85rem">{{.Summary.OK}} ok · {{.Summary.Warn}} warn · {{.Summary.Fail}} fail</span>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <h2>
+    {{if eq .Overall "ok"}}✓ Everything looks ready{{else if eq .Overall "warn"}}⚠ Mostly ready — {{.Summary.Warn}} thing(s) to review{{else}}✕ {{.Summary.Fail}} blocking issue(s){{end}}
+  </h2>
+  <p class="muted" style="font-size:0.9rem;margin:0">A read-only health check of this workspace's configuration — trunks, numbers, E911, business hours, voicemail, hold music, admins, 2FA, and alerting. Re-run anytime by reloading this page.</p>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <table>
+    <tbody>
+      {{range .Checks}}
+      <tr>
+        <td style="width:6rem">
+          {{if eq .Status "ok"}}<span class="pill pill-ok">OK</span>{{else if eq .Status "warn"}}<span class="pill pill-warn">CHECK</span>{{else}}<span class="pill pill-err">FAIL</span>{{end}}
+        </td>
+        <td><strong>{{.Name}}</strong><br><span class="muted" style="font-size:0.88rem">{{.Detail}}</span></td>
+        <td style="text-align:right">{{if .FixHref}}<a href="{{.FixHref}}" class="btn-sm">Fix →</a>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
