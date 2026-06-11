@@ -254,6 +254,10 @@ func (s *Server) Router() http.Handler {
 		r.Post("/me/extensions/{extensionID}/features", s.meFeaturesUpdate)
 		r.Get("/me/extensions/{extensionID}/voicemail/{msgID}/audio", s.meVoicemailAudio)
 		r.Post("/me/extensions/{extensionID}/voicemail/{msgID}/delete", s.meVoicemailDelete)
+		// Personal speed dials / favorites (user-scoped; reuses click-to-dial).
+		r.Post("/me/speed-dials", s.meSpeedDialCreate)
+		r.Post("/me/speed-dials/{id}/delete", s.meSpeedDialDelete)
+		r.Post("/me/speed-dials/{id}/call", s.meSpeedDialCall)
 		r.Get("/ops/live", s.opsLive)
 		r.Get("/ops/live/fragment", s.opsLiveFragment)
 		r.Post("/switch-tenant", s.switchTenant)

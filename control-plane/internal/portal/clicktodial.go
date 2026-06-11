@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/tendpos/sip-platform/control-plane/internal/store"
 )
 
 // Click-to-dial ("Call" button): a CRM-style action that rings the caller's OWN
@@ -97,45 +99,14 @@ func (s *Server) clickToDial(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the from-extension: the requested one if the user OWNS it, else the
 	// user's first owned extension. None owned → error.
-	owned, _ := s.store.FindOwnedExtensions(r.Context(), user.ID)
-	if len(owned) == 0 {
-		s.flashErr(w, r, back, errClickToDialNoExt)
-		return
-	}
-	from := owned[0]
-	if want := strings.TrimSpace(r.FormValue("from_extension_id")); want != "" {
-		if wantID, err := uuid.Parse(want); err == nil {
-			for _, e := range owned {
-				if e.ID == wantID {
-					from = e
-					break
-				}
-			}
-		}
-	}
-
-	// Resolve the from-extension's SIP domain string by matching its
-	// sip_domain_id against the tenant's SIP domains (mirrors supervisor.go).
-	fromDomain := ""
-	for _, d := range mustSIPDomains(r.Context(), s.store, tid) {
-		if d.ID == from.SIPDomainID {
-			fromDomain = d.Domain
-			break
-		}
-	}
-	if fromDomain == "" {
-		s.flashErr(w, r, back, errClickToDialNoExt)
+	from, err := s.resolveClickToDialFrom(r, user, strings.TrimSpace(r.FormValue("from_extension_id")))
+	if err != nil {
+		s.flashErr(w, r, back, err)
 		return
 	}
 
-	// Originate the caller's own phone via Kamailio (mirrors broadcast.go); on
-	// answer, &transfer re-enters the dialplan dialing the target.
-	dial := fmt.Sprintf(
-		"{origination_caller_id_number=%s,ignore_early_media=true}sofia/internal/sip:%s@%s;fs_path=sip:%s;lr",
-		from.Extension, from.SIPUsername, fromDomain, s.sipRoutingTarget,
-	)
-	if _, err := s.originator.Originate(r.Context(), dial, buildClickToDialActions(to)); err != nil {
-		s.flashErr(w, r, back, fmt.Errorf("could not place call: %w", err))
+	if err := s.originateClickToDial(r, from, to); err != nil {
+		s.flashErr(w, r, back, err)
 		return
 	}
 
@@ -148,4 +119,58 @@ func (s *Server) clickToDial(w http.ResponseWriter, r *http.Request) {
 		sep = "&"
 	}
 	http.Redirect(w, r, back+sep+"flash="+url.QueryEscape(flash), http.StatusSeeOther)
+}
+
+// resolveClickToDialFrom picks the owned extension to ring as the caller leg:
+// the requested wantID if the user owns it, else the user's first owned
+// extension. Returns errClickToDialNoExt when the user owns no extension.
+// Shared by the admin click-to-dial handler and the self-service speed-dial
+// CALL button so both ring the caller's OWN phone the same way.
+func (s *Server) resolveClickToDialFrom(r *http.Request, user *store.User, wantID string) (store.Extension, error) {
+	owned, _ := s.store.FindOwnedExtensions(r.Context(), user.ID)
+	if len(owned) == 0 {
+		return store.Extension{}, errClickToDialNoExt
+	}
+	from := owned[0]
+	if wantID != "" {
+		if id, err := uuid.Parse(wantID); err == nil {
+			for _, e := range owned {
+				if e.ID == id {
+					from = e
+					break
+				}
+			}
+		}
+	}
+	return from, nil
+}
+
+// originateClickToDial rings the caller's own extension via Kamailio (mirrors
+// broadcast.go); on answer, &transfer re-enters the dialplan dialing the
+// already-sanitized target. Pure originate path shared by click-to-dial and the
+// speed-dial CALL button — there is NO parallel originate mechanism.
+func (s *Server) originateClickToDial(r *http.Request, from store.Extension, to string) error {
+	if s.originator == nil || s.sipRoutingTarget == "" {
+		return errors.New("click-to-dial not configured")
+	}
+	// Resolve the from-extension's SIP domain string by matching its
+	// sip_domain_id against the tenant's SIP domains (mirrors supervisor.go).
+	fromDomain := ""
+	for _, d := range mustSIPDomains(r.Context(), s.store, from.TenantID) {
+		if d.ID == from.SIPDomainID {
+			fromDomain = d.Domain
+			break
+		}
+	}
+	if fromDomain == "" {
+		return errClickToDialNoExt
+	}
+	dial := fmt.Sprintf(
+		"{origination_caller_id_number=%s,ignore_early_media=true}sofia/internal/sip:%s@%s;fs_path=sip:%s;lr",
+		from.Extension, from.SIPUsername, fromDomain, s.sipRoutingTarget,
+	)
+	if _, err := s.originator.Originate(r.Context(), dial, buildClickToDialActions(to)); err != nil {
+		return fmt.Errorf("could not place call: %w", err)
+	}
+	return nil
 }

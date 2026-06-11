@@ -1,0 +1,5 @@
+BEGIN;
+
+DROP TABLE IF EXISTS speed_dials;
+
+COMMIT;

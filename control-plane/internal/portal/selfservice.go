@@ -3,6 +3,7 @@ package portal
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,15 +71,142 @@ func (s *Server) meHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exts, _ := s.store.FindOwnedExtensions(r.Context(), u.ID)
-	if len(exts) == 1 {
+	// Personal speed dials render on the home page alongside the extension list
+	// (so a user with a single extension still sees them, we DON'T auto-redirect
+	// when they have favorites — only when there's exactly one extension and the
+	// page would otherwise be a bare chooser). Keep the existing single-extension
+	// shortcut, but still surface speed dials there too by rendering home.
+	dials, _ := s.store.ListSpeedDialsForUser(r.Context(), u.ID)
+	if len(exts) == 1 && len(dials) == 0 {
 		http.Redirect(w, r, "/admin/me/extensions/"+exts[0].ID.String(), http.StatusSeeOther)
 		return
 	}
 	s.renderLayout(w, r, "My extensions", "me", map[string]any{
 		"SelfService": true,
 		"Extensions":  exts,
+		"SpeedDials":  dials,
 		"SessionUser": u,
 	})
+}
+
+// meSpeedDialCreate adds a personal speed dial for the SESSION user. The user_id
+// is derived from the session — never from the request body. The number is run
+// through the same sanitizeDialTarget guard the CALL button uses, so only a
+// dialable target can be stored.
+func (s *Server) meSpeedDialCreate(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+	if u.TenantID == nil {
+		// Speed dials are tenant-scoped for integrity; a super-admin (no tenant)
+		// has no self-service extensions and thus no speed dials.
+		http.Error(w, "speed dials require a tenant", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	redirect := "/admin/me"
+	label := strings.TrimSpace(r.FormValue("label"))
+	if label == "" {
+		s.flashErr(w, r, redirect, errors.New("enter a label"))
+		return
+	}
+	number, valid := sanitizeDialTarget(r.FormValue("number"))
+	if !valid {
+		s.flashErr(w, r, redirect, errors.New("enter a valid number or extension"))
+		return
+	}
+	d, err := s.store.CreateSpeedDial(r.Context(), store.CreateSpeedDialInput{
+		UserID:   u.ID,
+		TenantID: *u.TenantID,
+		Label:    label,
+		Number:   number,
+	})
+	if err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, *u.TenantID, "speed_dial.created", "speed_dial", &d.ID, map[string]any{"number": number})
+	http.Redirect(w, r, redirect+"?flash=Speed+dial+added.", http.StatusSeeOther)
+}
+
+// meSpeedDialDelete removes one of the SESSION user's own speed dials. Scoped by
+// user_id in the store query, so a user can never delete another user's entry.
+func (s *Server) meSpeedDialDelete(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad speed dial id", http.StatusBadRequest)
+		return
+	}
+	redirect := "/admin/me"
+	if err := s.store.DeleteSpeedDialForUser(r.Context(), u.ID, id); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	tid := uuid.Nil
+	if u.TenantID != nil {
+		tid = *u.TenantID
+	}
+	s.auditNested(r, tid, "speed_dial.deleted", "speed_dial", &id, nil)
+	http.Redirect(w, r, redirect+"?flash=Speed+dial+removed.", http.StatusSeeOther)
+}
+
+// meSpeedDialCall rings the SESSION user's own extension and, on answer, dials
+// the speed dial's stored number — reusing the existing click-to-dial originate
+// path (no parallel mechanism). The speed dial is resolved strictly within the
+// session user's own list, so a user can only call their own favorites.
+func (s *Server) meSpeedDialCall(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad speed dial id", http.StatusBadRequest)
+		return
+	}
+	redirect := "/admin/me"
+	// Find the dial within the user's OWN list (user-scoped lookup).
+	dials, _ := s.store.ListSpeedDialsForUser(r.Context(), u.ID)
+	var target *store.SpeedDial
+	for i := range dials {
+		if dials[i].ID == id {
+			target = &dials[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// Re-sanitize defensively before originating.
+	to, valid := sanitizeDialTarget(target.Number)
+	if !valid {
+		s.flashErr(w, r, redirect, errors.New("this speed dial has an invalid number"))
+		return
+	}
+	from, err := s.resolveClickToDialFrom(r, u, "")
+	if err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	if err := s.originateClickToDial(r, from, to); err != nil {
+		s.flashErr(w, r, redirect, err)
+		return
+	}
+	s.auditNested(r, from.TenantID, "speed_dial.call", "speed_dial", &target.ID, map[string]any{"to": to})
+	flash := "Calling " + target.Label + " — your phone (" + from.Extension + ") will ring."
+	http.Redirect(w, r, redirect+"?flash="+url.QueryEscape(flash), http.StatusSeeOther)
 }
 
 // meExtension renders the self-service page for one owned extension.

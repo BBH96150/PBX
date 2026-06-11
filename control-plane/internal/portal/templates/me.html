@@ -3,6 +3,8 @@
   <h1 style="margin:0">My extensions</h1>
 </div>
 
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn"{{end}}>{{.Flash}}</article>{{end}}
+
 <section class="card" style="margin-top:1rem">
   {{if .Extensions}}
   <table>
@@ -20,5 +22,44 @@
   {{else}}
   <p class="empty">No extension is assigned to your account yet. Ask your administrator to assign one.</p>
   {{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Speed dials</h2>
+  <p class="muted">Your personal favorites. The CALL button rings your own phone, then connects you to the number.</p>
+  {{if .SpeedDials}}
+  <table>
+    <thead><tr><th>Label</th><th>Number</th><th></th><th></th></tr></thead>
+    <tbody>
+      {{range .SpeedDials}}
+      <tr>
+        <td>{{.Label}}</td>
+        <td><code>{{.Number}}</code></td>
+        <td>
+          <form method="post" action="/admin/me/speed-dials/{{.ID}}/call" style="margin:0;display:inline">
+            <button type="submit" class="btn-sm">Call</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="/admin/me/speed-dials/{{.ID}}/delete" style="margin:0;display:inline" onsubmit="return confirm('Remove this speed dial?')">
+            <button type="submit" class="secondary btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="empty">No speed dials yet. Add one below.</p>
+  {{end}}
+  <form method="post" action="/admin/me/speed-dials" style="margin-top:0.75rem">
+    <label>Label
+      <input name="label" placeholder="e.g. Front desk" required>
+    </label>
+    <label>Number or extension
+      <input name="number" placeholder="e.g. 1001 or +14155550100" required>
+    </label>
+    <button type="submit">Add speed dial</button>
+  </form>
 </section>
 {{end}}
