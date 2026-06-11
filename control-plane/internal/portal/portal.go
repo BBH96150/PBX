@@ -1315,39 +1315,7 @@ func (s *Server) tenantExtensionsCSV(w http.ResponseWriter, r *http.Request) {
 	cw.Flush()
 }
 
-// tenantAuditCSV streams the tenant's audit log as a CSV for compliance/security
-// review. Mirrors the on-screen log but unpaginated (up to 10k rows).
-func (s *Server) tenantAuditCSV(w http.ResponseWriter, r *http.Request) {
-	tid, ok := s.parseTenantParam(w, r)
-	if !ok {
-		return
-	}
-	if _, err := s.store.GetTenant(r.Context(), tid); err != nil {
-		s.errPage(w, r, err)
-		return
-	}
-	entries, err := s.store.ListAuditForTenant(r.Context(), tid, 10000)
-	if err != nil {
-		s.errPage(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="audit-log.csv"`)
-	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"created_at", "actor_email", "event", "target_type", "target_id", "ip_address", "user_agent", "payload"})
-	for _, e := range entries {
-		target := ""
-		if e.TargetID != nil {
-			target = e.TargetID.String()
-		}
-		_ = cw.Write([]string{
-			e.CreatedAt.UTC().Format(time.RFC3339),
-			csvSafe(e.ActorEmail), csvSafe(e.Event), csvSafe(e.TargetType),
-			target, csvSafe(e.IPAddress), csvSafe(e.UserAgent), csvSafe(string(e.Payload)),
-		})
-	}
-	cw.Flush()
-}
+// tenantAuditCSV (the filtered audit-log CSV export) lives in audit_export.go.
 
 // ---------------------------------------------------------------------------
 // Extension detail
