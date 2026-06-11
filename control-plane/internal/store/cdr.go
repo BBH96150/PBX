@@ -29,7 +29,14 @@ type CDR struct {
 	CarrierID     *uuid.UUID
 	RecordingPath string
 	Note          string
-	Raw           map[string]string
+	// DispositionCodeID is the tenant-defined wrap-up code assigned to this call
+	// (nil = none). DispositionLabel/DispositionColor are the joined display
+	// fields for that code, populated by the list/get queries; they are empty
+	// when no code is assigned.
+	DispositionCodeID *uuid.UUID
+	DispositionLabel  string
+	DispositionColor  string
+	Raw               map[string]string
 }
 
 // ListCDRsForTenant returns recent CDRs for a tenant ordered by start time
@@ -40,14 +47,17 @@ func (s *Store) ListCDRsForTenant(ctx context.Context, tenantID uuid.UUID, limit
 		limit = 100
 	}
 	const q = `
-		SELECT id, tenant_id, call_uuid, direction, from_uri, to_uri,
-		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
-		       started_at, answered_at, ended_at,
-		       duration_sec, billable_sec, disposition,
-		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), COALESCE(note,''),
-		       raw
-		  FROM cdrs WHERE tenant_id = $1
-		 ORDER BY started_at DESC LIMIT $2`
+		SELECT c.id, c.tenant_id, c.call_uuid, c.direction, c.from_uri, c.to_uri,
+		       COALESCE(c.caller_id_num,''), COALESCE(c.caller_id_name,''),
+		       c.started_at, c.answered_at, c.ended_at,
+		       c.duration_sec, c.billable_sec, c.disposition,
+		       COALESCE(c.hangup_cause,''), c.carrier_id, COALESCE(c.recording_path,''), COALESCE(c.note,''),
+		       c.disposition_code_id, COALESCE(dc.label,''), COALESCE(dc.color,''),
+		       c.raw
+		  FROM cdrs c
+		  LEFT JOIN disposition_codes dc ON dc.id = c.disposition_code_id
+		 WHERE c.tenant_id = $1
+		 ORDER BY c.started_at DESC LIMIT $2`
 	rows, err := s.DB.Query(ctx, q, tenantID, limit)
 	if err != nil {
 		return nil, err
@@ -63,6 +73,7 @@ func (s *Store) ListCDRsForTenant(ctx context.Context, tenantID uuid.UUID, limit
 			&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
 			&c.DurationSec, &c.BillableSec, &c.Disposition,
 			&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note,
+			&c.DispositionCodeID, &c.DispositionLabel, &c.DispositionColor,
 			&rawJSON,
 		); err != nil {
 			return nil, err
@@ -138,21 +149,23 @@ func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUI
 		f.Limit = 10000
 	}
 	const q = `
-		SELECT id, tenant_id, call_uuid, direction, from_uri, to_uri,
-		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
-		       started_at, answered_at, ended_at,
-		       duration_sec, billable_sec, disposition,
-		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), COALESCE(note,''),
-		       raw
-		  FROM cdrs
-		 WHERE tenant_id = $1
-		   AND ($2 = '' OR direction = $2)
-		   AND ($3 = '' OR from_uri ILIKE '%'||$3||'%' OR to_uri ILIKE '%'||$3||'%'
-		        OR COALESCE(caller_id_num,'') ILIKE '%'||$3||'%'
-		        OR COALESCE(caller_id_name,'') ILIKE '%'||$3||'%')
-		   AND ($4::timestamptz IS NULL OR started_at >= $4)
-		   AND ($5::timestamptz IS NULL OR started_at < $5)
-		 ORDER BY started_at DESC LIMIT $6`
+		SELECT c.id, c.tenant_id, c.call_uuid, c.direction, c.from_uri, c.to_uri,
+		       COALESCE(c.caller_id_num,''), COALESCE(c.caller_id_name,''),
+		       c.started_at, c.answered_at, c.ended_at,
+		       c.duration_sec, c.billable_sec, c.disposition,
+		       COALESCE(c.hangup_cause,''), c.carrier_id, COALESCE(c.recording_path,''), COALESCE(c.note,''),
+		       c.disposition_code_id, COALESCE(dc.label,''), COALESCE(dc.color,''),
+		       c.raw
+		  FROM cdrs c
+		  LEFT JOIN disposition_codes dc ON dc.id = c.disposition_code_id
+		 WHERE c.tenant_id = $1
+		   AND ($2 = '' OR c.direction = $2)
+		   AND ($3 = '' OR c.from_uri ILIKE '%'||$3||'%' OR c.to_uri ILIKE '%'||$3||'%'
+		        OR COALESCE(c.caller_id_num,'') ILIKE '%'||$3||'%'
+		        OR COALESCE(c.caller_id_name,'') ILIKE '%'||$3||'%')
+		   AND ($4::timestamptz IS NULL OR c.started_at >= $4)
+		   AND ($5::timestamptz IS NULL OR c.started_at < $5)
+		 ORDER BY c.started_at DESC LIMIT $6`
 	rows, err := s.DB.Query(ctx, q, tenantID, f.Direction, f.Search, f.Since, f.Until, f.Limit)
 	if err != nil {
 		return nil, err
@@ -168,6 +181,7 @@ func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUI
 			&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
 			&c.DurationSec, &c.BillableSec, &c.Disposition,
 			&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note,
+			&c.DispositionCodeID, &c.DispositionLabel, &c.DispositionColor,
 			&rawJSON,
 		); err != nil {
 			return nil, err
@@ -181,12 +195,15 @@ func (s *Store) ListCDRsFilteredForTenant(ctx context.Context, tenantID uuid.UUI
 // deleting its recording.
 func (s *Store) GetCDRForTenant(ctx context.Context, tenantID, cdrID uuid.UUID) (*CDR, error) {
 	const q = `
-		SELECT id, tenant_id, call_uuid, direction, from_uri, to_uri,
-		       COALESCE(caller_id_num,''), COALESCE(caller_id_name,''),
-		       started_at, answered_at, ended_at,
-		       duration_sec, billable_sec, disposition,
-		       COALESCE(hangup_cause,''), carrier_id, COALESCE(recording_path,''), COALESCE(note,''), raw
-		  FROM cdrs WHERE id = $1 AND tenant_id = $2`
+		SELECT c.id, c.tenant_id, c.call_uuid, c.direction, c.from_uri, c.to_uri,
+		       COALESCE(c.caller_id_num,''), COALESCE(c.caller_id_name,''),
+		       c.started_at, c.answered_at, c.ended_at,
+		       c.duration_sec, c.billable_sec, c.disposition,
+		       COALESCE(c.hangup_cause,''), c.carrier_id, COALESCE(c.recording_path,''), COALESCE(c.note,''),
+		       c.disposition_code_id, COALESCE(dc.label,''), COALESCE(dc.color,''), c.raw
+		  FROM cdrs c
+		  LEFT JOIN disposition_codes dc ON dc.id = c.disposition_code_id
+		 WHERE c.id = $1 AND c.tenant_id = $2`
 	var c CDR
 	var rawJSON []byte
 	err := s.DB.QueryRow(ctx, q, cdrID, tenantID).Scan(
@@ -194,7 +211,8 @@ func (s *Store) GetCDRForTenant(ctx context.Context, tenantID, cdrID uuid.UUID) 
 		&c.CallerIDNum, &c.CallerIDName,
 		&c.StartedAt, &c.AnsweredAt, &c.EndedAt,
 		&c.DurationSec, &c.BillableSec, &c.Disposition,
-		&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note, &rawJSON,
+		&c.HangupCause, &c.CarrierID, &c.RecordingPath, &c.Note,
+		&c.DispositionCodeID, &c.DispositionLabel, &c.DispositionColor, &rawJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -207,6 +225,30 @@ func (s *Store) SetCDRNote(ctx context.Context, tenantID, cdrID uuid.UUID, note 
 	_, err := s.DB.Exec(ctx,
 		`UPDATE cdrs SET note = NULLIF($3,'') WHERE id = $1 AND tenant_id = $2`, cdrID, tenantID, note)
 	return err
+}
+
+// SetCDRDisposition assigns (or clears, when codeID is nil) a tenant-defined
+// wrap-up code to a call, tenant-scoped. A non-nil codeID must ALSO belong to the
+// tenant — enforced via the subquery so a cross-tenant code can't be linked
+// (mirrors SetExtensionE911Location). Clearing (codeID == nil) is supported: the
+// subquery yields NULL and the column is set to NULL. Returns ErrCrossTenant if
+// the CDR doesn't belong to the tenant (RowsAffected == 0).
+func (s *Store) SetCDRDisposition(ctx context.Context, tenantID, cdrID uuid.UUID, codeID *uuid.UUID) error {
+	const q = `
+		UPDATE cdrs
+		   SET disposition_code_id = (
+		         SELECT id FROM disposition_codes
+		          WHERE id = $3 AND tenant_id = $2
+		       )
+		 WHERE id = $1 AND tenant_id = $2`
+	ct, err := s.DB.Exec(ctx, q, cdrID, tenantID, codeID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrCrossTenant
+	}
+	return nil
 }
 
 // ClearCDRRecording blanks a CDR's recording_path (after the file is deleted),

@@ -267,6 +267,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
 		r.Get("/tenants/{tenantID}/cdrs.csv", s.tenantCDRsCSV)
 		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/note", s.tenantCDRNote)
+		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/disposition", s.tenantCDRDisposition)
 		r.Get("/tenants/{tenantID}/cdrs/{cdrID}/recording", s.cdrRecordingAudio)
 		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/recording/delete", s.cdrRecordingDelete)
 		r.Post("/tenants/{tenantID}/sip-domains", s.createSIPDomain)
@@ -364,6 +365,10 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/blocked-numbers", s.blockedNumberList)
 		r.Post("/tenants/{tenantID}/blocked-numbers", s.blockedNumberCreate)
 		r.Post("/tenants/{tenantID}/blocked-numbers/{id}/delete", s.blockedNumberDelete)
+		r.Get("/tenants/{tenantID}/disposition-codes", s.dispositionCodeList)
+		r.Post("/tenants/{tenantID}/disposition-codes", s.dispositionCodeCreate)
+		r.Post("/tenants/{tenantID}/disposition-codes/{id}/toggle", s.dispositionCodeToggle)
+		r.Post("/tenants/{tenantID}/disposition-codes/{id}/delete", s.dispositionCodeDelete)
 		r.Get("/tenants/{tenantID}/setup", s.tenantSetupCheck)
 		r.Get("/tenants/{tenantID}/queues-live", s.queueBoard)
 		r.Get("/tenants/{tenantID}/queues-live/fragment", s.queueBoardFragment)
@@ -1156,15 +1161,19 @@ func (s *Server) tenantCDRs(w http.ResponseWriter, r *http.Request) {
 	// AI insights (if any) keyed by CDR id — empty map when the feature is off
 	// or nothing has been processed, so the template shows nothing extra.
 	insights, _ := s.store.ListCallInsightsByCDRForTenant(r.Context(), tid, filter.Limit)
+	// Active disposition codes for the per-row assignment dropdown (empty when the
+	// tenant hasn't defined any — the column then renders just the assigned label).
+	dispositions, _ := s.store.ListActiveDispositionCodesForTenant(r.Context(), tid)
 	s.renderLayout(w, r, tenant.Name+" · CDRs", "cdrs", map[string]any{
-		"Tenant":    tenant,
-		"CDRs":      cdrs,
-		"Insights":  insights,
-		"Direction": filter.Direction,
-		"Search":    filter.Search,
-		"Since":     q.Get("since"),
-		"Until":     q.Get("until"),
-		"NavActive": "cdrs",
+		"Tenant":       tenant,
+		"CDRs":         cdrs,
+		"Insights":     insights,
+		"Dispositions": dispositions,
+		"Direction":    filter.Direction,
+		"Search":       filter.Search,
+		"Since":        q.Get("since"),
+		"Until":        q.Get("until"),
+		"NavActive":    "cdrs",
 	})
 }
 
@@ -1270,6 +1279,44 @@ func (s *Server) tenantCDRNote(w http.ResponseWriter, r *http.Request) {
 	if dest == "" {
 		dest = "/admin/tenants/" + tid.String() + "/cdrs"
 	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// tenantCDRDisposition assigns or clears a tenant-defined wrap-up code on a call.
+// An empty "code" value clears the assignment; a non-empty value must be a UUID of
+// a code that belongs to this tenant (enforced in SetCDRDisposition's subquery).
+func (s *Server) tenantCDRDisposition(w http.ResponseWriter, r *http.Request) {
+	tid, ok := s.parseTenantParam(w, r)
+	if !ok {
+		return
+	}
+	cdrID, err := uuid.Parse(chi.URLParam(r, "cdrID"))
+	if err != nil {
+		http.Error(w, "bad cdr id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	dest := r.Referer()
+	if dest == "" {
+		dest = "/admin/tenants/" + tid.String() + "/cdrs"
+	}
+	var codeID *uuid.UUID
+	if v := strings.TrimSpace(r.FormValue("code")); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			http.Error(w, "bad disposition code id", http.StatusBadRequest)
+			return
+		}
+		codeID = &id
+	}
+	if err := s.store.SetCDRDisposition(r.Context(), tid, cdrID, codeID); err != nil {
+		s.flashErr(w, r, dest, err)
+		return
+	}
+	s.auditNested(r, tid, "cdr.disposition.set", "cdr", &cdrID, nil)
 	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 

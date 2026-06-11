@@ -31,7 +31,7 @@
     <thead>
       <tr>
         <th>Started</th><th>Dir</th><th>From</th><th>To</th>
-        <th>Dur</th><th>Billed</th><th>Disp</th><th>Cause</th><th>Recording</th><th>Note</th>
+        <th>Dur</th><th>Billed</th><th>Disp</th><th>Cause</th><th>Outcome</th><th>Recording</th><th>Note</th>
       </tr>
     </thead>
     <tbody>
@@ -46,6 +46,23 @@
         <td>{{humandur .BillableSec}}</td>
         <td>{{if .Disposition}}<span class="pill {{if eq (deref .Disposition) "ANSWERED"}}pill-ok{{else}}pill-warn{{end}}">{{deref .Disposition}}</span>{{else}}—{{end}}</td>
         <td class="muted">{{.HangupCause}}</td>
+        <td>
+          {{if .DispositionLabel}}
+            {{if .DispositionColor}}<span class="pill" style="background:{{.DispositionColor}};color:#fff">{{.DispositionLabel}}</span>{{else}}<span class="pill">{{.DispositionLabel}}</span>{{end}}
+          {{end}}
+          {{if $.Dispositions}}
+          <form method="post" action="/admin/tenants/{{$t.ID}}/cdrs/{{.ID}}/disposition" style="margin:0.15rem 0 0">
+            <select name="code" onchange="this.form.submit()" style="margin:0;font-size:0.8rem;padding:0.15rem 0.4rem">
+              <option value="">—</option>
+              {{$cur := .DispositionCodeID}}
+              {{range $.Dispositions}}
+              <option value="{{.ID}}"{{if and $cur (eq (printf "%s" $cur) (printf "%s" .ID))}} selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+            <noscript><button type="submit" class="secondary" style="padding:0.15rem 0.4rem;font-size:0.78rem">✓</button></noscript>
+          </form>
+          {{end}}
+        </td>
         <td>
           {{if .RecordingPath}}
           <audio controls preload="none" style="height:1.8rem;vertical-align:middle">
@@ -66,7 +83,7 @@
       </tr>
       {{if $ci}}
       <tr class="ai-insight-row">
-        <td colspan="10" style="padding-top:0">
+        <td colspan="11" style="padding-top:0">
           <details style="margin:0.2rem 0 0.4rem">
             <summary style="cursor:pointer;font-size:0.85rem">🧠 AI summary{{if $ci.Summary}} — <span class="muted">{{$ci.Summary}}</span>{{end}}</summary>
             <div style="margin:0.4rem 0 0.2rem;font-size:0.85rem">

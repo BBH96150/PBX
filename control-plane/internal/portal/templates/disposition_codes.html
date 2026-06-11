@@ -1,0 +1,59 @@
+{{define "disposition_codes_content"}}
+{{$t := .Tenant}}
+<div class="row">
+  <h1 style="margin:0">{{$t.Name}} <span class="muted">· Disposition codes</span></h1>
+</div>
+{{template "tenant_subnav" .}}
+
+{{if .Flash}}<article {{if .FlashErr}}class="banner-warn" {{end}}style="margin-top:1rem">{{.Flash}}</article>{{end}}
+
+<section class="card callout" style="margin-top:1rem">
+  <p style="margin:0"><strong>Call wrap-up codes.</strong> Define a small set of outcome labels (e.g. "Sale", "Support", "Voicemail", "Spam", "Follow-up"). On the <a href="/admin/tenants/{{$t.ID}}/cdrs">Calls</a> page an agent assigns one code per completed call.</p>
+  <ul style="margin:0.4rem 0 0">
+    <li>The optional <strong>color</strong> renders the code as a small badge (any CSS color, e.g. <code>#22aa55</code>).</li>
+    <li><strong>Retiring</strong> a code keeps it on past calls but removes it from the assignment menu. <strong>Deleting</strong> removes it everywhere.</li>
+  </ul>
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2 style="margin:0 0 0.5rem;border:0;padding:0">Codes <span class="muted">({{len .Codes}})</span></h2>
+  {{if .Codes}}
+  <table>
+    <thead><tr><th>Label</th><th>Color</th><th>Order</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {{range .Codes}}
+      <tr>
+        <td>
+          {{if .Color}}<span class="pill" style="background:{{.Color}};color:#fff">{{.Label}}</span>{{else}}{{.Label}}{{end}}
+        </td>
+        <td class="muted">{{if .Color}}<code>{{.Color}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="muted">{{.SortOrder}}</td>
+        <td>{{if .Active}}<span class="pill pill-ok">active</span>{{else}}<span class="pill pill-warn">retired</span>{{end}}</td>
+        <td style="white-space:nowrap">
+          <form method="post" action="/admin/tenants/{{$t.ID}}/disposition-codes/{{.ID}}/toggle" style="display:inline;margin:0">
+            <input type="hidden" name="active" value="{{if .Active}}false{{else}}true{{end}}">
+            <button type="submit" class="secondary btn-sm">{{if .Active}}Retire{{else}}Activate{{end}}</button>
+          </form>
+          <form method="post" action="/admin/tenants/{{$t.ID}}/disposition-codes/{{.ID}}/delete" style="display:inline;margin:0" onsubmit="return confirm('Delete “{{.Label}}”? It will be removed from any calls it was assigned to.')">
+            <button type="submit" class="secondary btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">No disposition codes yet — add one below.</p>{{end}}
+</section>
+
+<section class="card" style="margin-top:1rem">
+  <h2>Add a code</h2>
+  <form method="post" action="/admin/tenants/{{$t.ID}}/disposition-codes">
+    <div class="grid-2">
+      <label>Label<input name="label" placeholder="e.g. Sale" required></label>
+      <label>Color <span class="muted">(optional)</span><input name="color" placeholder="e.g. #22aa55"></label>
+      <label>Sort order <span class="muted">(optional)</span><input name="sort_order" type="number" value="0"></label>
+    </div>
+    <button type="submit">Add code</button>
+  </form>
+</section>
+{{end}}
