@@ -41,6 +41,7 @@ type ESLClient struct {
 	mailer         smtp.Mailer
 	webhooks       *webhook.Dispatcher
 	kamailioTarget string // for agent contact URI rendering during sync
+	portalBaseURL  string // for the "listen in portal" link in VM-to-email
 
 	conn atomic.Pointer[eslgo.Conn]
 
@@ -68,6 +69,11 @@ func NewESLClient(host string, port int, password string, st *store.Store, maile
 		store: st, mailer: mailer, webhooks: wh, kamailioTarget: kamailioTarget,
 	}
 }
+
+// SetPortalBaseURL configures the base URL used to build the "listen in portal"
+// link in voicemail-to-email notifications (e.g. https://app.example.com). When
+// empty the email omits a clickable link path and just references the inbox.
+func (c *ESLClient) SetPortalBaseURL(u string) { c.portalBaseURL = u }
 
 // Run blocks until ctx is canceled. Reconnects with exponential backoff
 // (capped at 30s) on every disconnect or auth failure.

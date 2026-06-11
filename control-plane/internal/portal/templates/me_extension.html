@@ -20,6 +20,12 @@
       <input name="cf_no_answer" value="{{$e.CFNoAnswer}}" placeholder="blank = off">
     </label>
     <label><input type="checkbox" name="voicemail_enabled" value="true" {{if $e.VoicemailEnabled}}checked{{end}}> Voicemail enabled</label>
+    {{if .VoicemailBox}}
+    <label><input type="checkbox" name="vm_email_enabled" value="true" {{if .VoicemailBox.EmailEnabled}}checked{{end}}> Email me when I get a new voicemail</label>
+    <label>Send notifications to
+      <input name="vm_email_address" type="email" value="{{.VoicemailBox.EmailAddress}}" placeholder="you@example.com">
+    </label>
+    {{end}}
     <button type="submit">Save settings</button>
   </form>
 </section>

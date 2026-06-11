@@ -22,8 +22,14 @@ type VoicemailBox struct {
 	MaxMsgDurationSec int       `json:"max_msg_duration_sec"`
 	GreetingPath      string    `json:"greeting_path,omitempty"`
 	Enabled           bool      `json:"enabled"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	// VM-to-email notification opt-in (migration 0043). When EmailEnabled is
+	// true and EmailAddress is non-empty, a new voicemail triggers a best-effort
+	// notification email. Independent of the legacy Email field.
+	EmailEnabled bool   `json:"email_enabled"`
+	EmailAddress string `json:"email_address,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type CreateVoicemailBoxInput struct {
@@ -53,7 +59,9 @@ func (s *Store) CreateVoicemailBox(ctx context.Context, in CreateVoicemailBoxInp
 		VALUES ($1, $2, $3, NULLIF($4,'')::citext, $5, $6, $7)
 		RETURNING id, tenant_id, extension_id, pin, COALESCE(email::text,''),
 		          timezone, max_messages, max_msg_duration_sec,
-		          COALESCE(greeting_path,''), enabled, created_at, updated_at`
+		          COALESCE(greeting_path,''), enabled,
+		          voicemail_email_enabled, COALESCE(voicemail_email_address::text,''),
+		          created_at, updated_at`
 	var b VoicemailBox
 	err := s.DB.QueryRow(ctx, q,
 		in.TenantID, in.ExtensionID, in.PIN, in.Email, in.Timezone,
@@ -61,7 +69,9 @@ func (s *Store) CreateVoicemailBox(ctx context.Context, in CreateVoicemailBoxInp
 	).Scan(
 		&b.ID, &b.TenantID, &b.ExtensionID, &b.PIN, &b.Email,
 		&b.Timezone, &b.MaxMessages, &b.MaxMsgDurationSec,
-		&b.GreetingPath, &b.Enabled, &b.CreatedAt, &b.UpdatedAt,
+		&b.GreetingPath, &b.Enabled,
+		&b.EmailEnabled, &b.EmailAddress,
+		&b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -79,7 +89,9 @@ func (s *Store) GetVoicemailBoxByUserDomain(ctx context.Context, user, domain st
 	const q = `
 		SELECT vb.id, vb.tenant_id, vb.extension_id, vb.pin, COALESCE(vb.email::text,''),
 		       vb.timezone, vb.max_messages, vb.max_msg_duration_sec,
-		       COALESCE(vb.greeting_path,''), vb.enabled, vb.created_at, vb.updated_at
+		       COALESCE(vb.greeting_path,''), vb.enabled,
+		       vb.voicemail_email_enabled, COALESCE(vb.voicemail_email_address::text,''),
+		       vb.created_at, vb.updated_at
 		  FROM voicemail_boxes vb
 		  JOIN extensions  e  ON e.id  = vb.extension_id
 		  JOIN sip_domains sd ON sd.id = e.sip_domain_id
@@ -90,7 +102,9 @@ func (s *Store) GetVoicemailBoxByUserDomain(ctx context.Context, user, domain st
 	err := s.DB.QueryRow(ctx, q, user, domain).Scan(
 		&b.ID, &b.TenantID, &b.ExtensionID, &b.PIN, &b.Email,
 		&b.Timezone, &b.MaxMessages, &b.MaxMsgDurationSec,
-		&b.GreetingPath, &b.Enabled, &b.CreatedAt, &b.UpdatedAt,
+		&b.GreetingPath, &b.Enabled,
+		&b.EmailEnabled, &b.EmailAddress,
+		&b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -321,18 +335,50 @@ func (s *Store) GetVoicemailBoxByExtensionID(ctx context.Context, extID uuid.UUI
 	const q = `
 		SELECT id, tenant_id, extension_id, pin, COALESCE(email::text,''),
 		       timezone, max_messages, max_msg_duration_sec,
-		       COALESCE(greeting_path,''), enabled, created_at, updated_at
+		       COALESCE(greeting_path,''), enabled,
+		       voicemail_email_enabled, COALESCE(voicemail_email_address::text,''),
+		       created_at, updated_at
 		  FROM voicemail_boxes WHERE extension_id = $1`
 	var b VoicemailBox
 	err := s.DB.QueryRow(ctx, q, extID).Scan(
 		&b.ID, &b.TenantID, &b.ExtensionID, &b.PIN, &b.Email,
 		&b.Timezone, &b.MaxMessages, &b.MaxMsgDurationSec,
-		&b.GreetingPath, &b.Enabled, &b.CreatedAt, &b.UpdatedAt,
+		&b.GreetingPath, &b.Enabled,
+		&b.EmailEnabled, &b.EmailAddress,
+		&b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &b, nil
+}
+
+// ErrVoicemailBoxNotFound is returned when a box-scoped update misses.
+var ErrVoicemailBoxNotFound = errors.New("voicemail box not found for this extension")
+
+// UpdateVoicemailEmailNotify sets the VM-to-email opt-in (enabled flag +
+// recipient) for the box belonging to extID. An empty address forces enabled
+// to false so we never persist "enabled with nowhere to send". The address is
+// stored via NULLIF so an empty string becomes SQL NULL. Returns
+// ErrVoicemailBoxNotFound when the extension has no box. Used by both the admin
+// extension page and the owner self-service page.
+func (s *Store) UpdateVoicemailEmailNotify(ctx context.Context, extID uuid.UUID, enabled bool, address string) error {
+	if address == "" {
+		enabled = false
+	}
+	const q = `
+		UPDATE voicemail_boxes
+		   SET voicemail_email_enabled = $2,
+		       voicemail_email_address = NULLIF($3,'')::citext
+		 WHERE extension_id = $1`
+	tag, err := s.DB.Exec(ctx, q, extID, enabled, address)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrVoicemailBoxNotFound
+	}
+	return nil
 }
 
 // DIDVoicemailTarget is what the inbound PSTN handler needs to deliver a

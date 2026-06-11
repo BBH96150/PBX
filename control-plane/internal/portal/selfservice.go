@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/tendpos/sip-platform/control-plane/internal/store"
 )
+
+// errBadEmail is shown when the vm-email recipient is non-empty but malformed.
+var errBadEmail = errors.New("voicemail notification email must contain @")
 
 // currentUser resolves the logged-in end-user from the session token, or nil.
 func (s *Server) currentUser(r *http.Request) *store.User {
@@ -133,6 +137,11 @@ func (s *Server) meFeaturesUpdate(w http.ResponseWriter, r *http.Request) {
 		s.flashErr(w, r, redirect, err)
 		return
 	}
+	// VM-to-email opt-in (portal-only; not exposed on /v1). Best-effort: only
+	// applies when the extension has a voicemail box.
+	if err := s.applyVoicemailEmailNotify(r, ext, redirect, w); err != nil {
+		return // applyVoicemailEmailNotify already wrote the flash/redirect
+	}
 	s.auditNested(r, ext.TenantID, "extension.features.self_update", "extension", &ext.ID, map[string]any{
 		"dnd": dnd, "voicemail": vm,
 	})
@@ -188,6 +197,32 @@ func (s *Server) meVoicemailDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditNested(r, ext.TenantID, "voicemail.message.self_deleted", "voicemail_message", &msg.ID, nil)
 	http.Redirect(w, r, redirect+"?flash=Message+deleted.", http.StatusSeeOther)
+}
+
+// applyVoicemailEmailNotify reads the vm-email toggle + address from the posted
+// form and persists them to the extension's voicemail box. Shared by the admin
+// and owner feature-update handlers. Portal-only (no /v1).
+//
+// Returns a non-nil error ONLY when it has already written an error response
+// (so the caller must just return). A missing voicemail box is treated as a
+// silent no-op — the toggle is only meaningful once a box exists. An invalid
+// address (non-empty but no '@') is rejected with a flash.
+func (s *Server) applyVoicemailEmailNotify(r *http.Request, ext *store.Extension, redirect string, w http.ResponseWriter) error {
+	enabled := r.FormValue("vm_email_enabled") == "true"
+	addr := strings.TrimSpace(r.FormValue("vm_email_address"))
+	if enabled && addr != "" && !strings.Contains(addr, "@") {
+		err := errBadEmail
+		s.flashErr(w, r, redirect, err)
+		return err
+	}
+	if err := s.store.UpdateVoicemailEmailNotify(r.Context(), ext.ID, enabled, addr); err != nil {
+		if err == store.ErrVoicemailBoxNotFound {
+			return nil // no box yet; nothing to set
+		}
+		s.flashErr(w, r, redirect, err)
+		return err
+	}
+	return nil
 }
 
 // ownedVoicemailMessage resolves {msgID} and verifies it belongs to the owned

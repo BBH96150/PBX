@@ -103,6 +103,7 @@ func main() {
 	}
 	webhookDispatcher := webhook.New(st)
 	esl := freeswitch.NewESLClient(cfg.ESLHost, cfg.ESLPort, cfg.ESLPassword, st, mailer, webhookDispatcher, cfg.KamailioSIPTarget)
+	esl.SetPortalBaseURL(cfg.PortalBaseURL)
 
 	// Task #10: RPS registry. Real Polycom adapter if creds are set;
 	// otherwise everything falls back to LogOnly.

@@ -1,6 +1,63 @@
 package freeswitch
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tendpos/sip-platform/control-plane/internal/store"
+)
+
+func TestShouldSendVoicemailEmail(t *testing.T) {
+	cases := []struct {
+		name      string
+		box       *store.VoicemailBox
+		smtpReady bool
+		want      bool
+	}{
+		{
+			name:      "enabled + valid address + smtp configured",
+			box:       &store.VoicemailBox{EmailEnabled: true, EmailAddress: "owner@example.com"},
+			smtpReady: true,
+			want:      true,
+		},
+		{
+			name:      "disabled toggle is inert even with address + smtp",
+			box:       &store.VoicemailBox{EmailEnabled: false, EmailAddress: "owner@example.com"},
+			smtpReady: true,
+			want:      false,
+		},
+		{
+			name:      "enabled but no address",
+			box:       &store.VoicemailBox{EmailEnabled: true, EmailAddress: ""},
+			smtpReady: true,
+			want:      false,
+		},
+		{
+			name:      "enabled but malformed address (no @)",
+			box:       &store.VoicemailBox{EmailEnabled: true, EmailAddress: "not-an-email"},
+			smtpReady: true,
+			want:      false,
+		},
+		{
+			name:      "enabled + address but smtp not configured",
+			box:       &store.VoicemailBox{EmailEnabled: true, EmailAddress: "owner@example.com"},
+			smtpReady: false,
+			want:      false,
+		},
+		{
+			name:      "nil box",
+			box:       nil,
+			smtpReady: true,
+			want:      false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := shouldSendVoicemailEmail(c.box, c.smtpReady); got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
 
 func TestIsVoicemailLeaveMessage(t *testing.T) {
 	cases := []struct {

@@ -112,8 +112,13 @@
     <label>CF immediate<input name="cf_immediate" value="{{$e.CFImmediate}}" placeholder="ext or +E.164"></label>
     <label>CF busy<input name="cf_busy" value="{{$e.CFBusy}}" placeholder="ext or +E.164"></label>
     <label>CF no-answer<input name="cf_no_answer" value="{{$e.CFNoAnswer}}" placeholder="ext or +E.164"></label>
+    {{if .VoicemailBox}}
+    <label><input type="checkbox" name="vm_email_enabled" value="true" {{if .VoicemailBox.EmailEnabled}}checked{{end}}> Email me new voicemails</label>
+    <label>Notify email<input name="vm_email_address" type="email" value="{{.VoicemailBox.EmailAddress}}" placeholder="owner@example.com"></label>
+    {{end}}
     <button type="submit">Save</button>
   </form>
+  {{if not .VoicemailBox}}<p class="muted" style="margin:0.4rem 0 0">Create a voicemail box below to enable email notifications.</p>{{end}}
 </section>
 
 {{if .VoicemailBox}}

@@ -1518,6 +1518,10 @@ func (s *Server) extensionFeaturesUpdate(w http.ResponseWriter, r *http.Request)
 		s.flashErr(w, r, "/admin/extensions/"+id.String(), err)
 		return
 	}
+	// VM-to-email opt-in (portal-only; not exposed on /v1).
+	if err := s.applyVoicemailEmailNotify(r, ext, "/admin/extensions/"+id.String(), w); err != nil {
+		return // already wrote flash/redirect
+	}
 	http.Redirect(w, r, "/admin/extensions/"+id.String()+"?flash=saved", http.StatusSeeOther)
 }
 
