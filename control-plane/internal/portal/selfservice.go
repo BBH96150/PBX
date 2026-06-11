@@ -42,11 +42,19 @@ func (s *Server) ownedExtension(w http.ResponseWriter, r *http.Request) (*store.
 		http.Error(w, "not found", http.StatusNotFound)
 		return nil, nil, false
 	}
-	if ext.UserID == nil || *ext.UserID != u.ID {
+	if !userOwnsExtension(ext, u) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return nil, nil, false
 	}
 	return ext, u, true
+}
+
+// userOwnsExtension is the pure ownership predicate the self-service guard
+// relies on: the extension must have an owner set AND it must be exactly this
+// user. A same-tenant non-owner (or a cross-tenant user) fails — tenant match
+// is deliberately NOT sufficient, which is what closes the prior authz gap.
+func userOwnsExtension(ext *store.Extension, u *store.User) bool {
+	return ext != nil && u != nil && ext.UserID != nil && *ext.UserID == u.ID
 }
 
 // meHome lists the user's own extensions. One → straight to it; none → an empty
