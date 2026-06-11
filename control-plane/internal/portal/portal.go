@@ -263,6 +263,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/tenants/{tenantID}/sms/thread", s.smsThread)
 		r.Post("/tenants/{tenantID}/sms/send", s.smsSend)
 		r.Get("/tenants/{tenantID}/reports", s.reportsView)
+		r.Get("/tenants/{tenantID}/analytics", s.tenantAnalytics)
 		r.Get("/tenants/{tenantID}/cdrs", s.tenantCDRs)
 		r.Get("/tenants/{tenantID}/cdrs.csv", s.tenantCDRsCSV)
 		r.Post("/tenants/{tenantID}/cdrs/{cdrID}/note", s.tenantCDRNote)
