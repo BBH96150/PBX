@@ -1214,45 +1214,7 @@ func csvSafe(s string) string {
 	return s
 }
 
-// tenantCDRsCSV streams the filtered call log as a CSV download.
-func (s *Server) tenantCDRsCSV(w http.ResponseWriter, r *http.Request) {
-	tid, ok := s.parseTenantParam(w, r)
-	if !ok {
-		return
-	}
-	if _, err := s.store.GetTenant(r.Context(), tid); err != nil {
-		s.errPage(w, r, err)
-		return
-	}
-	filter := cdrFilterFromQuery(r.URL.Query(), 10000)
-	cdrs, err := s.store.ListCDRsFilteredForTenant(r.Context(), tid, filter)
-	if err != nil {
-		s.errPage(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="call-log.csv"`)
-	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"started_at", "direction", "from", "to", "caller_id_num", "caller_id_name", "duration_sec", "billable_sec", "disposition", "hangup_cause", "note"})
-	intStr := func(p *int) string {
-		if p == nil {
-			return ""
-		}
-		return strconv.Itoa(*p)
-	}
-	for _, c := range cdrs {
-		disp := ""
-		if c.Disposition != nil {
-			disp = *c.Disposition
-		}
-		_ = cw.Write([]string{
-			c.StartedAt.UTC().Format(time.RFC3339), c.Direction, csvSafe(c.FromURI), csvSafe(c.ToURI),
-			csvSafe(c.CallerIDNum), csvSafe(c.CallerIDName), intStr(c.DurationSec), intStr(c.BillableSec),
-			disp, csvSafe(c.HangupCause), csvSafe(c.Note),
-		})
-	}
-	cw.Flush()
-}
+// tenantCDRsCSV (the filtered call-log CSV export) lives in cdr_export.go.
 
 // tenantCDRNote sets/clears a free-text note on a call record.
 func (s *Server) tenantCDRNote(w http.ResponseWriter, r *http.Request) {

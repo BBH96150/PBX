@@ -16,6 +16,12 @@
 </form>
 
 <div class="toolbar" style="margin-top:1rem">
+  <span class="muted" style="font-size:0.85rem">Export:</span>
+  <a href="/admin/tenants/{{$t.ID}}/cdrs.csv" role="button" class="secondary btn-sm" download>Export CDRs (CSV)</a>
+  <span class="muted" style="font-size:0.78rem">Downloads the full call log (up to 10k rows) as a CSV.</span>
+</div>
+
+<div class="toolbar" style="margin-top:1rem">
   <span class="muted" style="font-size:0.85rem">Window:</span>
   <a href="?days=7" role="button" class="{{if ne .Days 7}}secondary {{end}}btn-sm">7 days</a>
   <a href="?days=30" role="button" class="{{if ne .Days 30}}secondary {{end}}btn-sm">30 days</a>
